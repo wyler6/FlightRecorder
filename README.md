@@ -1,6 +1,6 @@
 # Flight Recorder
 
-Records the exact path of every flight path (taxi) you take as a list of position samples, saved for a later tool to plot. Recording only: no map, no UI.
+Records the exact path of every flight path (taxi) you take as a list of position samples. The addon itself has no window; the routes are drawn by the flight map page in `map/` (see **Flight map** below).
 Recordings that never reach taxi speed within 10 s are discarded (not saved).
 
 **Install note:** a new addon needs a full game restart (not /reload) the first time.
