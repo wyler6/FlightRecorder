@@ -1,0 +1,959 @@
+<title>Flight Routes of Azeroth</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* Design plan: a flight master's route ledger. Cool-grey chrome so the parchment map art is the only warm thing on the page.
+   Fonts: IBM Plex Sans for labels, IBM Plex Mono for yards, seconds and speeds.
+   Layout: one outer wrapper; map large on the left, ledger of flights on the right; stacked under 900px. */
+:root {
+  --bg: #eceff2;
+  --fg: #1a2027;
+  --muted: #56626e;
+  --rule: #c6cdd4;
+  --panel: #f9fafb;
+  --accent: #1d4f7a;
+  --focus: #0b63c5;
+  --warn: #8a5300;
+  --halo: #f4ecd3;
+  --label-ink: #2b2415;
+  --map-bg: #d9d2bd;
+  --scrim: #eceff2e6;
+  --font-ui: "IBM Plex Sans", system-ui, "Segoe UI", Roboto, sans-serif;
+  --font-num: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #14181c;
+    --fg: #e3e8ec;
+    --muted: #94a0ab;
+    --rule: #2d363e;
+    --panel: #1b2127;
+    --accent: #86b4e0;
+    --focus: #6db3ff;
+    --warn: #e2b04a;
+    --scrim: #14181ce6;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #14181c;
+  --fg: #e3e8ec;
+  --muted: #94a0ab;
+  --rule: #2d363e;
+  --panel: #1b2127;
+  --accent: #86b4e0;
+  --focus: #6db3ff;
+  --warn: #e2b04a;
+  --scrim: #14181ce6;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-ui);
+  font-size: 15px;
+  line-height: 1.4;
+}
+button, input { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+[hidden] { display: none !important; }
+
+.app {
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 20px 32px;
+  max-width: 1500px;
+  margin-inline: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.top { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+h1 { margin: 0; font-size: 22px; font-weight: 600; letter-spacing: 0.01em; }
+.summary { margin: 0; color: var(--muted); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.summary b { color: var(--fg); font-weight: 600; font-family: var(--font-num); font-size: 0.95em; }
+
+.loader {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px;
+  padding-block: 10px; border-block: 1px solid var(--rule);
+}
+.loader > * { min-width: 0; }
+.btn, .filebtn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  min-height: 34px; padding-inline: 12px;
+  background: var(--panel); border: 1px solid var(--rule); border-radius: 3px;
+  cursor: pointer; white-space: nowrap;
+}
+.btn:hover, .filebtn:hover { border-color: var(--accent); }
+.filebtn:focus-within { outline: 2px solid var(--focus); outline-offset: 2px; }
+.vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.hint { margin: 0; color: var(--muted); font-size: 13px; overflow-wrap: anywhere; flex: 1 1 280px; }
+.hint code { font-family: var(--font-num); font-size: 12px; }
+.source { margin: 0; font-size: 13px; color: var(--muted); flex: 1 1 100%; }
+.source.err { color: var(--warn); }
+
+.layout { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 16px; align-items: start; }
+.mapcol { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.bar { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; }
+.seg { display: inline-flex; gap: 0; }
+.seg .btn { border-radius: 0; margin-left: -1px; }
+.seg .btn:first-child { border-radius: 3px 0 0 3px; margin-left: 0; }
+.seg .btn:last-child { border-radius: 0 3px 3px 0; }
+.seg .btn[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--bg); position: relative; }
+.count { font-family: var(--font-num); font-size: 12px; opacity: 0.85; font-variant-numeric: tabular-nums; }
+.zoom { display: inline-flex; gap: 6px; margin-left: auto; }
+.zoom .btn { min-width: 36px; padding-inline: 8px; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 30px; padding-inline: 9px 10px;
+  background: var(--panel); border: 1px solid var(--rule); border-radius: 15px; cursor: pointer;
+}
+.chip[aria-pressed="false"] { opacity: 0.55; text-decoration: line-through; }
+.sw { width: 14px; height: 4px; border-radius: 2px; flex: none; }
+
+.view {
+  position: relative; overflow: hidden; width: 100%;
+  aspect-ratio: 1002 / 668; max-height: 82vh;
+  background: var(--map-bg); border: 1px solid var(--rule);
+  touch-action: none; cursor: grab; user-select: none; -webkit-user-select: none;
+}
+.view.grabbing { cursor: grabbing; }
+.stage { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform; }
+.stage img { display: block; width: 100%; height: 100%; max-width: none; pointer-events: none; -webkit-user-drag: none; }
+.stage svg { position: absolute; left: 0; top: 0; width: 100%; height: 100%; overflow: visible; }
+.mapnote {
+  position: absolute; left: 10px; top: 10px; right: 10px; margin: 0; width: fit-content; max-width: calc(100% - 20px);
+  padding: 8px 12px; background: var(--scrim); border: 1px solid var(--rule); border-radius: 3px;
+  pointer-events: none; font-size: 14px;
+}
+.route-halo { fill: none; stroke: var(--halo); stroke-width: 5.5; stroke-opacity: 0.7; vector-effect: non-scaling-stroke; stroke-linecap: round; stroke-linejoin: round; }
+.route-line { fill: none; stroke-width: 3; vector-effect: non-scaling-stroke; stroke-linecap: round; stroke-linejoin: round; }
+.route.dim { opacity: 0.14; }
+.route.on .route-line { stroke-width: 4.5; }
+.route.on .route-halo { stroke-width: 7.5; stroke-opacity: 0.9; }
+.route.on .route-line { stroke-dasharray: 12 8; stroke-linecap: butt; animation: flow 0.9s linear infinite; }
+@keyframes flow { from { stroke-dashoffset: 0; } to { stroke-dashoffset: -20; } }
+.mk { stroke: var(--halo); stroke-width: 1.5; }
+.mk.dim { opacity: 0.2; }
+.lbl { font-family: var(--font-ui); font-size: 12px; font-weight: 600; fill: var(--label-ink); stroke: var(--halo); stroke-width: 3.5; paint-order: stroke; stroke-linejoin: round; }
+.lbl.dim { opacity: 0.25; }
+
+.key { margin: 0; color: var(--muted); font-size: 13px; }
+
+.listcol { min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.listcol h2 { margin: 0; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0; border-top: 1px solid var(--rule); max-height: 82vh; overflow-y: auto; }
+.list li { min-width: 0; border-bottom: 1px solid var(--rule); }
+.row {
+  display: flex; flex-direction: column; gap: 3px; width: 100%; padding: 10px 10px 10px 12px; text-align: left;
+  background: transparent; border: 0; border-left: 4px solid transparent; cursor: pointer; min-width: 0;
+}
+.row:hover, .row:focus-visible { background: var(--panel); }
+.row.pinned { background: var(--panel); border-left-color: var(--accent); }
+.route-name { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
+.via { font-size: 12px; font-weight: 400; color: var(--muted); }
+.meta { font-size: 13px; color: var(--muted); display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; min-width: 0; }
+.meta .sw { width: 10px; height: 10px; border-radius: 50%; }
+.nums { display: grid; grid-template-columns: repeat(3, minmax(0, auto)); justify-content: start; gap: 0 18px; font-family: var(--font-num); font-size: 13px; font-variant-numeric: tabular-nums; }
+.nums span { white-space: nowrap; }
+.nums small { color: var(--muted); font-size: 11px; }
+.tag { font-size: 11px; font-family: var(--font-ui); padding: 0 6px; border: 1px solid var(--warn); color: var(--warn); border-radius: 3px; text-transform: uppercase; letter-spacing: 0.04em; }
+.empty { padding: 14px 12px; color: var(--muted); }
+
+.drop { position: fixed; inset: 0; z-index: 10; display: flex; align-items: center; justify-content: center; background: var(--scrim); border: 3px dashed var(--accent); font-size: 18px; pointer-events: none; }
+
+@media (max-width: 900px) {
+  .layout { grid-template-columns: minmax(0, 1fr); }
+  .list { max-height: none; }
+  .zoom { margin-left: 0; }
+}
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; transition: none !important; animation: none !important; } }
+</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;600&display=swap">
+
+<div class="app">
+  <header class="top">
+    <h1>Flight Routes of Azeroth</h1>
+    <p class="summary" id="summary">Loading flights.</p>
+  </header>
+
+  <section class="loader" aria-label="Flight data source">
+    <label class="filebtn" for="fileInput"><span>Load FlightRecorder.lua</span><input class="vh" type="file" id="fileInput" accept=".lua,.txt,text/plain"></label>
+    <button type="button" class="btn" id="resetData" hidden>Use published data</button>
+    <p class="hint">Find the file at <code>World of Warcraft\_forever_\WTF\Account\&lt;account&gt;\SavedVariables\FlightRecorder.lua</code>. Pick it here or drop it anywhere on this page.</p>
+    <p class="source" id="source" role="status"></p>
+  </section>
+
+  <div class="layout">
+    <section class="mapcol" aria-label="Route map">
+      <div class="bar">
+        <div class="seg" role="group" aria-label="Continent">
+          <button type="button" class="btn" id="contKalimdor" aria-pressed="false">Kalimdor <span class="count" id="countKalimdor">0</span></button>
+          <button type="button" class="btn" id="contEK" aria-pressed="false">Eastern Kingdoms <span class="count" id="countEK">0</span></button>
+        </div>
+        <div class="legend" id="legend" role="group" aria-label="Characters"></div>
+        <div class="zoom" role="group" aria-label="Zoom">
+          <button type="button" class="btn" id="zoomIn" aria-label="Zoom in">+</button>
+          <button type="button" class="btn" id="zoomOut" aria-label="Zoom out">&minus;</button>
+          <button type="button" class="btn" id="zoomReset">Reset view</button>
+        </div>
+      </div>
+      <div class="view" id="view" tabindex="0" role="application" aria-label="Map. Drag to pan, scroll or use plus and minus to zoom.">
+        <div class="stage" id="stage" hidden>
+          <img id="mapImg" alt="" draggable="false">
+          <svg id="overlay" aria-hidden="true"></svg>
+        </div>
+        <p class="mapnote" id="mapNote" hidden></p>
+      </div>
+      <p class="key">Circle: takeoff. Diamond: landing. Arrows point the way you flew.</p>
+    </section>
+
+    <aside class="listcol" aria-label="Flight list">
+      <h2>Flights, newest first</h2>
+      <ul class="list" id="list"></ul>
+    </aside>
+  </div>
+</div>
+<div class="drop" id="dropOverlay" hidden>Drop FlightRecorder.lua to load it</div>
+
+<script src="flights-data.js"></script>
+<script>
+// ==LUA-PARSER-START==
+// Parser for the WoW SavedVariables subset of Lua: nested tables, ["key"] = value, bare array items,
+// strings, numbers, true/false/nil, comments. Returns an object of top-level assignments.
+// Tables with only bare items become arrays; tables with any keys become objects.
+function parseLua(src) {
+  let i = 0;
+  const n = src.length;
+  const reNum = /-?(?:0[xX][0-9a-fA-F]+|\d+\.?\d*(?:[eE][+-]?\d+)?|\.\d+(?:[eE][+-]?\d+)?)/y;
+  const reId = /[A-Za-z_][A-Za-z0-9_]*/y;
+  const reDec = /\d{1,3}/y;
+  const ESC = { n: '\n', t: '\t', r: '\r', '\\': '\\', '"': '"', "'": "'", a: '\x07', b: '\b', f: '\f', v: '\v' };
+  function fail(msg) {
+    const line = src.slice(0, i).split('\n').length;
+    throw new Error('Lua parse error at line ' + line + ': ' + msg);
+  }
+  function take(re) {
+    re.lastIndex = i;
+    const m = re.exec(src);
+    if (!m) return null;
+    i = re.lastIndex;
+    return m[0];
+  }
+  function ws() {
+    while (i < n) {
+      const c = src[i];
+      if (c === ' ' || c === '\t' || c === '\r' || c === '\n') { i++; }
+      else if (c === '-' && src[i + 1] === '-') {
+        const m = /^--\[(=*)\[/.exec(src.slice(i, i + 40));
+        if (m) {
+          const end = src.indexOf(']' + m[1] + ']', i);
+          i = end < 0 ? n : end + m[1].length + 2;
+        } else {
+          const nl = src.indexOf('\n', i);
+          i = nl < 0 ? n : nl + 1;
+        }
+      } else break;
+    }
+  }
+  function str() {
+    const q = src[i++];
+    let out = '';
+    for (;;) {
+      if (i >= n) fail('unterminated string');
+      const c = src[i];
+      if (c === q) { i++; return out; }
+      if (c === '\\') {
+        i++;
+        const e = src[i];
+        if (e >= '0' && e <= '9') { const d = take(reDec); out += String.fromCharCode(parseInt(d, 10)); continue; }
+        out += e === '\n' ? '\n' : (Object.prototype.hasOwnProperty.call(ESC, e) ? ESC[e] : e);
+        i++;
+      } else { out += c; i++; }
+    }
+  }
+  function value() {
+    ws();
+    const c = src[i];
+    if (c === '{') return table();
+    if (c === '"' || c === "'") return str();
+    const num = take(reNum);
+    if (num !== null) return /^-?0[xX]/.test(num) ? parseInt(num, 16) : parseFloat(num);
+    const id = take(reId);
+    if (id !== null) {
+      if (id === 'true') return true;
+      if (id === 'false') return false;
+      if (id === 'nil') return null;
+      fail('unexpected identifier ' + id);
+    }
+    fail('unexpected character ' + JSON.stringify(c));
+  }
+  function table() {
+    i++; // {
+    const items = [];
+    const keyed = {};
+    let hasKeys = false;
+    for (;;) {
+      ws();
+      const c = src[i];
+      if (c === undefined) fail('unterminated table');
+      if (c === '}') { i++; break; }
+      if (c === ',' || c === ';') { i++; continue; }
+      if (c === '[') {
+        i++;
+        const k = value();
+        ws();
+        if (src[i] !== ']') fail("expected ']'");
+        i++; ws();
+        if (src[i] !== '=') fail("expected '='");
+        i++;
+        const v = value();
+        if (v !== null) { keyed[String(k)] = v; hasKeys = true; }
+        continue;
+      }
+      const save = i;
+      const id = take(reId);
+      if (id !== null && id !== 'true' && id !== 'false' && id !== 'nil') {
+        ws();
+        if (src[i] === '=' && src[i + 1] !== '=') {
+          i++;
+          const v = value();
+          if (v !== null) { keyed[id] = v; hasKeys = true; }
+          continue;
+        }
+      }
+      i = save;
+      items.push(value());
+    }
+    if (hasKeys) {
+      items.forEach((v, idx) => { if (!(String(idx + 1) in keyed)) keyed[String(idx + 1)] = v; });
+      return keyed;
+    }
+    return items;
+  }
+  const out = {};
+  for (;;) {
+    ws();
+    if (i >= n) return out;
+    const name = take(reId);
+    if (name === null) fail('expected identifier');
+    ws();
+    if (src[i] !== '=') fail("expected '='");
+    i++;
+    out[name] = value();
+  }
+}
+// ==LUA-PARSER-END==
+
+// ==NORMALIZE-START==
+// Turns a flight from either source into one shape. fromLua is true for raw SavedVariables data, where a
+// point is [t, y, x, cx, cy]; in flights.json a point is already [t, cx, cy].
+function normFlight(f, fromLua) {
+  if (!f || typeof f !== 'object' || Array.isArray(f)) return null;
+  const pts = [];
+  if (Array.isArray(f.points)) {
+    for (const p of f.points) {
+      if (!Array.isArray(p)) continue;
+      const cx = fromLua ? p[3] : p[1];
+      const cy = fromLua ? p[4] : p[2];
+      if (typeof cx === 'number' && typeof cy === 'number') pts.push([p[0], Math.round(cx * 1e5) / 1e5, Math.round(cy * 1e5) / 1e5]);
+    }
+  }
+  const hops = [];
+  if (Array.isArray(f.hops)) {
+    for (const h of f.hops) {
+      if (Array.isArray(h)) hops.push({ from: String(h[0] ?? ''), to: String(h[1] ?? '') });
+      else if (h && typeof h === 'object') hops.push({ from: String(h.fromName ?? ''), to: String(h.toName ?? '') });
+    }
+  }
+  const num = (v) => (typeof v === 'number' && isFinite(v) ? v : 0);
+  return {
+    char: String(f.char ?? 'Unknown'),
+    faction: String(f.faction ?? ''),
+    cls: String(f.class ?? ''),
+    from: String(f.from ?? ''),
+    to: String(f.to ?? ''),
+    hops: hops,
+    continent: num(f.continent),
+    started: num(f.started),
+    duration: num(f.duration),
+    distance: num(f.distance),
+    complete: f.complete === true,
+    note: String(f.note ?? ''),
+    pts: pts
+  };
+}
+function flightsFromLua(text) {
+  const data = parseLua(text);
+  const db = data.FlightRecorderDB;
+  if (!db || typeof db !== 'object') throw new Error('FlightRecorderDB was not found in that file.');
+  let list = db.flights;
+  if (list && !Array.isArray(list)) list = Object.values(list);
+  if (!Array.isArray(list)) list = [];
+  return list.map((f) => normFlight(f, true)).filter(Boolean);
+}
+// ==NORMALIZE-END==
+
+// ==ARROWS-START==
+// Arrow positions along a route. pts are [t, cx, cy] with cx/cy in 0..1. Returns [{x, y, a}] in map pixels,
+// a in degrees (SVG, y down). Heading is taken from points -delta and +delta along the path to smooth jitter.
+function arrowSpots(pts, nw, nh) {
+  const xs = pts.map((p) => p[1] * nw), ys = pts.map((p) => p[2] * nh);
+  const cum = [0];
+  for (let i = 1; i < xs.length; i++) cum.push(cum[i - 1] + Math.hypot(xs[i] - xs[i - 1], ys[i] - ys[i - 1]));
+  const total = cum[cum.length - 1];
+  if (!(total > 0)) return [];
+  const at = (d) => {
+    d = Math.min(total, Math.max(0, d));
+    let lo = 0, hi = cum.length - 1;
+    while (hi - lo > 1) { const m = (lo + hi) >> 1; if (cum[m] <= d) lo = m; else hi = m; }
+    const seg = cum[hi] - cum[lo];
+    const u = seg > 0 ? (d - cum[lo]) / seg : 0;
+    return [xs[lo] + (xs[hi] - xs[lo]) * u, ys[lo] + (ys[hi] - ys[lo]) * u];
+  };
+  // about one arrow per 80 map px (4..14); heading over a wider window so take-off hooks and landing
+  // circles don't turn arrows sideways (user 24.11.: arrows on short routes pointed off the route's way)
+  const n = Math.min(14, Math.max(4, Math.round(total / 80)));
+  const delta = Math.max(12, total * 0.05);
+  const out = [];
+  for (let k = 0; k < n; k++) {
+    const d = ((k + 0.5) / n) * total;
+    const c = at(d), p0 = at(d - delta), p1 = at(d + delta);
+    out.push({ x: c[0], y: c[1], a: Math.atan2(p1[1] - p0[1], p1[0] - p0[0]) * 180 / Math.PI });
+  }
+  return out;
+}
+// ==ARROWS-END==
+
+(function () {
+  'use strict';
+  const $ = (id) => document.getElementById(id);
+  const SVGNS = 'http://www.w3.org/2000/svg';
+  const STORE_KEY = 'flightmap.loaded.v1';
+  const CONT = {
+    1414: { name: 'Kalimdor', img: 'maps/kalimdor.jpg', btn: 'contKalimdor', count: 'countKalimdor' },
+    1415: { name: 'Eastern Kingdoms', img: 'maps/eastern_kingdoms.jpg', btn: 'contEK', count: 'countEK' }
+  };
+  const PALETTE = {
+    Alliance: ['#1b55a0', '#0e7a8a', '#5144b0', '#2a82cf'],
+    Horde: ['#b3231a', '#d0511a', '#8c1e50', '#a0302a'],
+    Other: ['#3a6a2c', '#6a5a22', '#4a4a4a', '#2c6a5a']
+  };
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+
+  const view = $('view'), stage = $('stage'), img = $('mapImg'), svg = $('overlay');
+  const state = {
+    flights: [], source: 'published', sourceName: '', savedAt: 0,
+    published: null, publishedError: null,
+    cont: 1414, hidden: new Set(), pinned: null, hover: null,
+    colors: new Map(), imgError: false, pendingFit: null,
+    nw: 1002, nh: 668, vw: 0, vh: 0, tx: 0, ty: 0, s: 1, minS: 0.1, maxS: 4, atFit: true
+  };
+  let routeEls = new Map(), markerEls = [], labelEls = [], gRoutes = null, scaled = [];
+  let anim = 0;
+
+  // ---------- helpers ----------
+  const short = (name) => String(name).split(',')[0].trim();
+  const fmtInt = (v) => Math.round(v).toLocaleString('en-US');
+  const fmtDur = (sec) => { const t = Math.round(sec); return Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0'); };
+  const fmtSpan = (sec) => {
+    const t = Math.round(sec), h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), s = t % 60;
+    return h ? h + 'h ' + m + 'm' : (m ? m + 'm ' + s + 's' : s + 's');
+  };
+  const fmtDate = (ts) => new Date(ts * 1000).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+  function el(tag, cls, text) {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text !== undefined) e.textContent = text;
+    return e;
+  }
+  function sv(tag, attrs) {
+    const e = document.createElementNS(SVGNS, tag);
+    for (const k in attrs) e.setAttribute(k, attrs[k]);
+    return e;
+  }
+  const plural = (n, w) => n + ' ' + w + (n === 1 ? '' : 's');
+
+  // ---------- data ----------
+  function setData(list, source, name, savedAt) {
+    state.flights = list.slice().sort((a, b) => b.started - a.started);
+    state.flights.forEach((f, i) => { f.id = i; });
+    state.source = source; state.sourceName = name || ''; state.savedAt = savedAt || 0;
+    state.pinned = null; state.hover = null; state.hidden = new Set(); state.pendingFit = null;
+    const chars = [];
+    for (const f of state.flights) if (!chars.some((c) => c.name === f.char)) chars.push({ name: f.char, faction: f.faction });
+    const order = { Alliance: 0, Horde: 1 };
+    chars.sort((a, b) => ((order[a.faction] ?? 2) - (order[b.faction] ?? 2)) || a.name.localeCompare(b.name));
+    const used = { Alliance: 0, Horde: 0, Other: 0 };
+    state.colors = new Map();
+    for (const c of chars) {
+      const fam = PALETTE[c.faction] ? c.faction : 'Other';
+      const pal = PALETTE[fam];
+      state.colors.set(c.name, pal[used[fam]++ % pal.length]);
+    }
+    const latest = state.flights[0];
+    const cont = latest && CONT[latest.continent] ? latest.continent : 1414;
+    renderAll();
+    setContinent(cont, true);
+  }
+  function readStored() {
+    try {
+      const raw = localStorage.getItem(STORE_KEY);
+      if (!raw) return null;
+      const o = JSON.parse(raw);
+      if (!o || !Array.isArray(o.flights)) return null;
+      const flights = o.flights.map((f) => normFlight(Object.assign({}, f, { points: f.pts, class: f.cls }), false)).filter(Boolean);
+      return { name: o.name || 'FlightRecorder.lua', savedAt: o.savedAt || 0, flights: flights };
+    } catch (e) { return null; }
+  }
+  function writeStored(flights, name, savedAt) {
+    try { localStorage.setItem(STORE_KEY, JSON.stringify({ name: name, savedAt: savedAt, flights: flights })); } catch (e) { /* quota or blocked storage: ignore */ }
+  }
+  function clearStored() { try { localStorage.removeItem(STORE_KEY); } catch (e) { /* ignore */ } }
+
+  async function loadFile(file) {
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const flights = flightsFromLua(text);
+      const now = Date.now();
+      writeStored(flights.map((f) => ({ char: f.char, faction: f.faction, cls: f.cls, from: f.from, to: f.to, hops: f.hops.map((h) => [h.from, h.to]), continent: f.continent, started: f.started, duration: f.duration, distance: f.distance, complete: f.complete, note: f.note, pts: f.pts })), file.name, now);
+      setData(flights, 'loaded', file.name, now);
+    } catch (e) {
+      setSource('Could not read ' + file.name + ': ' + e.message, true);
+    }
+  }
+  function usePublished() {
+    clearStored();
+    setData(state.published || [], 'published');
+  }
+  function setSource(msg, isErr) {
+    const p = $('source');
+    p.textContent = msg;
+    p.classList.toggle('err', !!isErr);
+  }
+  function updateSource() {
+    if (state.source === 'loaded') {
+      setSource('Showing ' + state.sourceName + ', loaded ' + (state.savedAt ? fmtDate(state.savedAt / 1000) : 'earlier') + ' and remembered in this browser.', false);
+    } else if (state.published) {
+      setSource('Showing the exported flights.', false);
+    } else {
+      setSource('No exported flights found. Double-click Update Flight Map.bat in this folder, or load FlightRecorder.lua above.', true);
+    }
+    $('resetData').hidden = state.source !== 'loaded';
+  }
+
+  // ---------- render: summary, legend, list, counts ----------
+  function renderSummary() {
+    const fl = state.flights;
+    const s = $('summary');
+    s.textContent = '';
+    if (!fl.length) { s.textContent = 'No flights loaded.'; return; }
+    const secs = fl.reduce((a, f) => a + f.duration, 0);
+    const yds = fl.reduce((a, f) => a + f.distance, 0);
+    const names = Array.from(state.colors.keys());
+    const parts = [
+      [String(fl.length), fl.length === 1 ? ' flight recorded' : ' flights recorded'],
+      [fmtSpan(secs), ' in the air'],
+      [fmtInt(yds), ' yd flown'],
+      [String(names.length), (names.length === 1 ? ' character' : ' characters') + ' (' + names.join(', ') + ')']
+    ];
+    parts.forEach((p, i) => {
+      if (i) s.append(' · ');
+      s.append(el('b', '', p[0]), p[1]);
+    });
+  }
+  function renderLegend() {
+    const box = $('legend');
+    box.textContent = '';
+    let i = 0;
+    for (const [name, color] of state.colors) {
+      const count = state.flights.filter((f) => f.char === name).length;
+      const b = el('button', 'chip');
+      b.type = 'button';
+      b.id = 'chip-' + (i++);
+      b.setAttribute('aria-pressed', state.hidden.has(name) ? 'false' : 'true');
+      b.title = (state.hidden.has(name) ? 'Show' : 'Hide') + ' ' + name + ' routes';
+      const sw = el('span', 'sw');
+      sw.style.background = color;
+      b.append(sw, el('span', '', name), el('span', 'count', String(count)));
+      b.addEventListener('click', () => {
+        if (state.hidden.has(name)) state.hidden.delete(name); else state.hidden.add(name);
+        const pf = state.flights[state.pinned];
+        if (pf && state.hidden.has(pf.char)) state.pinned = null;
+        renderLegend(); renderList(); renderOverlay(); applyHighlight(); updateNote();
+      });
+      box.append(b);
+    }
+  }
+  function renderCounts() {
+    for (const c in CONT) {
+      $(CONT[c].count).textContent = String(state.flights.filter((f) => f.continent === Number(c)).length);
+      $(CONT[c].btn).setAttribute('aria-pressed', Number(c) === state.cont ? 'true' : 'false');
+    }
+  }
+  function renderList() {
+    const ul = $('list');
+    ul.textContent = '';
+    const shown = state.flights.filter((f) => !state.hidden.has(f.char));
+    if (!shown.length) {
+      const li = el('li', 'empty', state.flights.length ? 'All characters are hidden. Turn one on above.' : 'No flights to show.');
+      ul.append(li);
+      return;
+    }
+    for (const f of shown) {
+      const li = el('li');
+      const b = el('button', 'row');
+      b.type = 'button';
+      b.id = 'row-' + f.id;
+      b.dataset.id = f.id;
+      b.setAttribute('aria-pressed', state.pinned === f.id ? 'true' : 'false');
+      if (state.pinned === f.id) b.classList.add('pinned');
+
+      const name = el('div', 'route-name');
+      name.append(el('span', '', short(f.from) + ' → ' + short(f.to)));
+      if (!f.complete) name.append(el('span', 'tag', 'partial'));
+      b.append(name);
+      const stops = f.hops.slice(0, -1).map((h) => short(h.to));
+      if (stops.length) b.append(el('div', 'via', 'via ' + stops.join(', ')));
+
+      const meta = el('div', 'meta');
+      const sw = el('span', 'sw');
+      sw.style.background = state.colors.get(f.char) || '';
+      const when = f.started ? fmtDate(f.started) : 'Unknown time';
+      meta.append(sw, el('span', '', f.char), el('span', '', when));
+      if (CONT[f.continent]) meta.append(el('span', '', CONT[f.continent].name));
+      b.append(meta);
+
+      const nums = el('div', 'nums');
+      const speed = f.duration > 0 ? (f.distance / f.duration).toFixed(1) : '0.0';
+      const mk = (v, u) => { const s = el('span', '', v); s.append(' ', el('small', '', u)); return s; };
+      nums.append(mk(fmtDur(f.duration), 'm:ss'), mk(fmtInt(f.distance), 'yd'), mk(speed, 'yd/s'));
+      b.append(nums);
+
+      b.addEventListener('mouseenter', () => { state.hover = f.id; applyHighlight(); });
+      b.addEventListener('mouseleave', () => { state.hover = null; applyHighlight(); });
+      b.addEventListener('focus', () => { state.hover = f.id; applyHighlight(); });
+      b.addEventListener('blur', () => { state.hover = null; applyHighlight(); });
+      b.addEventListener('click', () => selectFlight(f.id));
+      li.append(b);
+      ul.append(li);
+    }
+  }
+  function renderAll() {
+    renderSummary(); renderLegend(); renderList(); renderCounts(); updateSource();
+  }
+  function updateNote() {
+    const note = $('mapNote');
+    const onCont = state.flights.filter((f) => f.continent === state.cont);
+    let msg = '';
+    if (state.imgError) msg = 'Map image ' + CONT[state.cont].img + ' was not found next to this page.';
+    else if (!state.flights.length) msg = state.published || state.source === 'loaded'
+      ? 'No flights recorded yet.'
+      : 'No exported flights found. Double-click Update Flight Map.bat in this folder, or load FlightRecorder.lua above.';
+    else if (!onCont.length) msg = 'No ' + CONT[state.cont].name + ' flights recorded yet.';
+    else if (onCont.every((f) => state.hidden.has(f.char))) msg = 'All characters with ' + CONT[state.cont].name + ' flights are hidden.';
+    note.textContent = msg;
+    note.hidden = !msg;
+  }
+
+  // ---------- map overlay ----------
+  function renderOverlay() {
+    svg.textContent = '';
+    routeEls = new Map(); markerEls = []; labelEls = []; scaled = [];
+    svg.setAttribute('viewBox', '0 0 ' + state.nw + ' ' + state.nh);
+    gRoutes = sv('g', {});
+    const gMarks = sv('g', {}), gLabels = sv('g', {});
+    svg.append(gRoutes, gMarks, gLabels);
+    const flights = state.flights.filter((f) => f.continent === state.cont && !state.hidden.has(f.char) && f.pts.length >= 2);
+    const labels = []; // {x, y, name, ids}
+    const place = (f, p, nodeName, kind) => {
+      const x = p[1] * state.nw, y = p[2] * state.nh;
+      const color = state.colors.get(f.char) || '#444';
+      const g = sv('g', {});
+      const shape = kind === 'start'
+        ? sv('circle', { r: 5, fill: color, class: 'mk' })
+        : sv('polygon', { points: '0,-6.5 6.5,0 0,6.5 -6.5,0', fill: color, class: 'mk' });
+      g.append(shape);
+      gMarks.append(g);
+      scaled.push({ g: g, x: x, y: y });
+      markerEls.push({ id: f.id, el: shape });
+      const key = short(nodeName);
+      let lab = labels.find((l) => { const d = Math.hypot(l.x - x, l.y - y); return d < 8 || (l.name === key && d < 40); });
+      if (!lab) { lab = { x: x, y: y, name: key, ids: new Set() }; labels.push(lab); }
+      lab.ids.add(f.id);
+    };
+    for (const f of flights) {
+      const g = sv('g', { class: 'route' });
+      const pts = f.pts.map((p) => (p[1] * state.nw).toFixed(1) + ',' + (p[2] * state.nh).toFixed(1)).join(' ');
+      const color = state.colors.get(f.char) || '#444';
+      g.append(sv('polyline', { class: 'route-halo', points: pts }), sv('polyline', { class: 'route-line', points: pts, stroke: color }));
+      for (const sp of arrowSpots(f.pts, state.nw, state.nh)) {
+        const ag = sv('g', {});
+        ag.append(sv('polygon', { points: '5,0 -4,-3.8 -4,3.8', fill: color, class: 'mk' }));
+        g.append(ag);
+        scaled.push({ g: ag, x: sp.x, y: sp.y, a: sp.a });
+      }
+      gRoutes.append(g);
+      routeEls.set(f.id, g);
+      place(f, f.pts[0], f.from, 'start');
+      place(f, f.pts[f.pts.length - 1], f.to, 'end');
+    }
+    for (const l of labels) {
+      const g = sv('g', {});
+      const t = sv('text', { class: 'lbl', x: 9, y: 4 });
+      t.textContent = l.name;
+      g.append(t);
+      gLabels.append(g);
+      scaled.push({ g: g, x: l.x, y: l.y });
+      labelEls.push({ ids: l.ids, el: t });
+    }
+    applyScaled();
+    applyHighlight();
+  }
+  function applyScaled() {
+    const k = 1 / state.s;
+    for (const o of scaled) o.g.setAttribute('transform', 'translate(' + o.x.toFixed(1) + ' ' + o.y.toFixed(1) + ')' + (o.a !== undefined ? ' rotate(' + o.a.toFixed(1) + ')' : '') + ' scale(' + k + ')');
+  }
+  function applyHighlight() {
+    const active = state.hover !== null ? state.hover : state.pinned;
+    for (const [id, g] of routeEls) {
+      g.classList.toggle('dim', active !== null && id !== active);
+      g.classList.toggle('on', id === active);
+    }
+    if (active !== null && routeEls.has(active)) gRoutes.append(routeEls.get(active));
+    for (const m of markerEls) m.el.classList.toggle('dim', active !== null && m.id !== active);
+    for (const l of labelEls) l.el.classList.toggle('dim', active !== null && !l.ids.has(active));
+    document.querySelectorAll('.row').forEach((r) => {
+      const on = state.pinned === Number(r.dataset.id);
+      r.classList.toggle('pinned', on);
+      r.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+  }
+
+  // ---------- continent / image ----------
+  function setContinent(c, force) {
+    if (!force && c === state.cont) return;
+    state.cont = c;
+    renderCounts();
+    state.imgError = false;
+    stage.hidden = true;
+    const wanted = CONT[c].img;
+    img.onload = () => { if (state.cont === c) onImage(true); };
+    img.onerror = () => { if (state.cont === c) onImage(false); };
+    if (img.getAttribute('src') === wanted && img.complete && img.naturalWidth) onImage(true);
+    else img.src = wanted;
+    updateNote();
+  }
+  function onImage(ok) {
+    state.imgError = !ok;
+    state.nw = ok ? img.naturalWidth : 1002;
+    state.nh = ok ? img.naturalHeight : 668;
+    stage.style.width = state.nw + 'px';
+    stage.style.height = state.nh + 'px';
+    stage.hidden = false;
+    img.style.visibility = ok ? 'visible' : 'hidden';
+    measure();
+    renderOverlay();
+    updateNote();
+    if (state.pendingFit !== null) {
+      const id = state.pendingFit;
+      state.pendingFit = null;
+      fitRoute(id, false);
+    } else resetView(false);
+  }
+
+  // ---------- view transform ----------
+  function measure() {
+    const r = view.getBoundingClientRect();
+    state.vw = r.width; state.vh = r.height;
+    const fit = Math.min(state.vw / state.nw, state.vh / state.nh) || 0.1;
+    state.minS = fit;
+    state.maxS = fit * 14;
+  }
+  function clampView(tx, ty, s) {
+    const w = state.nw * s, h = state.nh * s;
+    const mx = Math.min(80, state.vw * 0.3), my = Math.min(80, state.vh * 0.3);
+    return { tx: Math.min(state.vw - mx, Math.max(mx - w, tx)), ty: Math.min(state.vh - my, Math.max(my - h, ty)) };
+  }
+  function setView(tx, ty, s) {
+    s = Math.min(state.maxS, Math.max(state.minS, s));
+    const c = clampView(tx, ty, s);
+    const sChanged = s !== state.s;
+    state.tx = c.tx; state.ty = c.ty; state.s = s;
+    stage.style.transform = 'translate(' + c.tx + 'px,' + c.ty + 'px) scale(' + s + ')';
+    if (sChanged) applyScaled();
+    state.atFit = Math.abs(s - state.minS) < 1e-6 && Math.abs(c.tx - (state.vw - state.nw * s) / 2) < 1 && Math.abs(c.ty - (state.vh - state.nh * s) / 2) < 1;
+  }
+  function animateTo(tx, ty, s, animate) {
+    cancelAnimationFrame(anim);
+    s = Math.min(state.maxS, Math.max(state.minS, s));
+    if (!animate || reduceMotion.matches) { setView(tx, ty, s); return; }
+    const from = { tx: state.tx, ty: state.ty, s: state.s }, t0 = performance.now(), dur = 260;
+    const step = (now) => {
+      const p = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - p, 3);
+      const ss = from.s * Math.pow(s / from.s, e);
+      setView(from.tx + (tx - from.tx) * e, from.ty + (ty - from.ty) * e, ss);
+      if (p < 1) anim = requestAnimationFrame(step);
+    };
+    anim = requestAnimationFrame(step);
+  }
+  function resetView(animate) {
+    const s = state.minS;
+    animateTo((state.vw - state.nw * s) / 2, (state.vh - state.nh * s) / 2, s, animate);
+  }
+  function zoomAt(px, py, factor, animate) {
+    const s = Math.min(state.maxS, Math.max(state.minS, state.s * factor));
+    const k = s / state.s;
+    animateTo(px - (px - state.tx) * k, py - (py - state.ty) * k, s, animate);
+  }
+  function fitRoute(id, animate) {
+    const f = state.flights[id];
+    if (!f || f.pts.length < 2) return;
+    let x0 = 1, y0 = 1, x1 = 0, y1 = 0;
+    for (const p of f.pts) { x0 = Math.min(x0, p[1]); x1 = Math.max(x1, p[1]); y0 = Math.min(y0, p[2]); y1 = Math.max(y1, p[2]); }
+    const w = Math.max((x1 - x0) * state.nw, 40), h = Math.max((y1 - y0) * state.nh, 40);
+    const s = Math.min(state.vw / (w * 1.4), state.vh / (h * 1.4));
+    const cs = Math.min(state.maxS, Math.max(state.minS, s));
+    const cx = ((x0 + x1) / 2) * state.nw, cy = ((y0 + y1) / 2) * state.nh;
+    animateTo(state.vw / 2 - cx * cs, state.vh / 2 - cy * cs, cs, animate);
+  }
+  function selectFlight(id) {
+    const f = state.flights[id];
+    if (!f) return;
+    if (state.pinned === id) { state.pinned = null; applyHighlight(); return; }
+    state.pinned = id;
+    if (state.hidden.has(f.char)) { state.hidden.delete(f.char); renderLegend(); }
+    if (CONT[f.continent] && f.continent !== state.cont) {
+      state.pendingFit = id;
+      renderList();
+      setContinent(f.continent);
+      applyHighlight();
+      return;
+    }
+    renderOverlay();
+    applyHighlight();
+    fitRoute(id, true);
+    if (window.matchMedia('(max-width: 900px)').matches) view.scrollIntoView({ block: 'nearest', behavior: reduceMotion.matches ? 'auto' : 'smooth' });
+  }
+
+  // ---------- map input ----------
+  const ptrs = new Map();
+  view.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    cancelAnimationFrame(anim);
+    try { view.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+    ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    view.classList.add('grabbing');
+  });
+  view.addEventListener('pointermove', (e) => {
+    const prev = ptrs.get(e.pointerId);
+    if (!prev) return;
+    const r = view.getBoundingClientRect();
+    if (ptrs.size === 1) {
+      setView(state.tx + e.clientX - prev.x, state.ty + e.clientY - prev.y, state.s);
+      ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    } else if (ptrs.size === 2) {
+      const other = Array.from(ptrs.entries()).find((p) => p[0] !== e.pointerId)[1];
+      const d0 = Math.hypot(prev.x - other.x, prev.y - other.y) || 1;
+      const d1 = Math.hypot(e.clientX - other.x, e.clientY - other.y) || 1;
+      const m0x = (prev.x + other.x) / 2 - r.left, m0y = (prev.y + other.y) / 2 - r.top;
+      const m1x = (e.clientX + other.x) / 2 - r.left, m1y = (e.clientY + other.y) / 2 - r.top;
+      const s = Math.min(state.maxS, Math.max(state.minS, state.s * d1 / d0));
+      const k = s / state.s;
+      setView(m1x - (m0x - state.tx) * k, m1y - (m0y - state.ty) * k, s);
+      ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    }
+  });
+  const endPtr = (e) => { ptrs.delete(e.pointerId); if (!ptrs.size) view.classList.remove('grabbing'); };
+  view.addEventListener('pointerup', endPtr);
+  view.addEventListener('pointercancel', endPtr);
+  view.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const r = view.getBoundingClientRect();
+    const dy = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
+    zoomAt(e.clientX - r.left, e.clientY - r.top, Math.exp(-dy * 0.0015), false);
+  }, { passive: false });
+  view.addEventListener('keydown', (e) => {
+    const step = 60;
+    if (e.key === '+' || e.key === '=') zoomAt(state.vw / 2, state.vh / 2, 1.5, true);
+    else if (e.key === '-' || e.key === '_') zoomAt(state.vw / 2, state.vh / 2, 1 / 1.5, true);
+    else if (e.key === '0') resetView(true);
+    else if (e.key === 'ArrowLeft') setView(state.tx + step, state.ty, state.s);
+    else if (e.key === 'ArrowRight') setView(state.tx - step, state.ty, state.s);
+    else if (e.key === 'ArrowUp') setView(state.tx, state.ty + step, state.s);
+    else if (e.key === 'ArrowDown') setView(state.tx, state.ty - step, state.s);
+    else return;
+    e.preventDefault();
+  });
+  $('zoomIn').addEventListener('click', () => zoomAt(state.vw / 2, state.vh / 2, 1.6, true));
+  $('zoomOut').addEventListener('click', () => zoomAt(state.vw / 2, state.vh / 2, 1 / 1.6, true));
+  $('zoomReset').addEventListener('click', () => resetView(true));
+  $('contKalimdor').addEventListener('click', () => setContinent(1414));
+  $('contEK').addEventListener('click', () => setContinent(1415));
+  if (window.ResizeObserver) {
+    new ResizeObserver(() => {
+      if (stage.hidden) return;
+      const wasFit = state.atFit;
+      measure();
+      if (wasFit) resetView(false); else setView(state.tx, state.ty, state.s);
+    }).observe(view);
+  }
+
+  // ---------- file loading ----------
+  $('fileInput').addEventListener('change', (e) => {
+    const f = e.target.files && e.target.files[0];
+    if (f) loadFile(f);
+    e.target.value = '';
+  });
+  $('resetData').addEventListener('click', usePublished);
+  const overlay = $('dropOverlay');
+  let dragDepth = 0;
+  const hasFiles = (e) => e.dataTransfer && Array.from(e.dataTransfer.types || []).indexOf('Files') >= 0;
+  window.addEventListener('dragenter', (e) => { if (hasFiles(e)) { dragDepth++; overlay.hidden = false; } });
+  window.addEventListener('dragleave', (e) => { if (hasFiles(e)) { dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) overlay.hidden = true; } });
+  window.addEventListener('dragover', (e) => { if (hasFiles(e)) e.preventDefault(); });
+  window.addEventListener('drop', (e) => {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    dragDepth = 0; overlay.hidden = true;
+    const f = e.dataTransfer.files && e.dataTransfer.files[0];
+    if (f) loadFile(f);
+  });
+
+  // ---------- start ----------
+  async function start() {
+    const stored = readStored();
+    state.imgError = false;
+    if (stored) setData(stored.flights, 'loaded', stored.name, stored.savedAt);
+    else { renderAll(); setContinent(state.cont, true); }
+    if (Array.isArray(window.FLIGHT_DATA)) {
+      state.published = window.FLIGHT_DATA.map((f) => normFlight(f, false)).filter(Boolean);
+    } else {
+      try {
+        const r = await fetch('flights.json', { cache: 'no-cache' });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const arr = await r.json();
+        if (!Array.isArray(arr)) throw new Error('flights.json is not a list');
+        state.published = arr.map((f) => normFlight(f, false)).filter(Boolean);
+      } catch (e) {
+        state.published = null; state.publishedError = e;
+      }
+    }
+    // a republish with newer flights than the remembered file wins (the remembered file is then dropped)
+    const newest = (l) => l.reduce((m, f) => Math.max(m, f.started || 0), 0);
+    if (stored && state.published && newest(state.published) > newest(stored.flights)) {
+      clearStored();
+      setData(state.published, 'published');
+    } else if (!stored) setData(state.published || [], 'published');
+    else updateSource();
+    updateNote();
+  }
+  start();
+})();
+</script>
