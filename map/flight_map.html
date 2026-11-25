@@ -196,7 +196,7 @@ h1 { margin: 0; font-size: 22px; font-weight: 600; letter-spacing: 0.01em; }
           <button type="button" class="btn" id="contKalimdor" aria-pressed="false">Kalimdor <span class="count" id="countKalimdor">0</span></button>
           <button type="button" class="btn" id="contEK" aria-pressed="false">Eastern Kingdoms <span class="count" id="countEK">0</span></button>
         </div>
-        <div class="legend" id="legend" role="group" aria-label="Characters"></div>
+        <div class="legend" id="legend" role="group" aria-label="Factions"></div>
         <div class="zoom" role="group" aria-label="Zoom">
           <button type="button" class="btn" id="zoomIn" aria-label="Zoom in">+</button>
           <button type="button" class="btn" id="zoomOut" aria-label="Zoom out">&minus;</button>
@@ -373,9 +373,7 @@ function normFlight(f, fromLua) {
   }
   const num = (v) => (typeof v === 'number' && isFinite(v) ? v : 0);
   return {
-    char: String(f.char ?? 'Unknown'),
     faction: String(f.faction ?? ''),
-    cls: String(f.class ?? ''),
     from: String(f.from ?? ''),
     to: String(f.to ?? ''),
     hops: hops,
@@ -439,12 +437,10 @@ function arrowSpots(pts, nw, nh) {
     1414: { name: 'Kalimdor', img: 'maps/kalimdor.jpg', btn: 'contKalimdor', count: 'countKalimdor' },
     1415: { name: 'Eastern Kingdoms', img: 'maps/eastern_kingdoms.jpg', btn: 'contEK', count: 'countEK' }
   };
-  const PALETTE = {
-    // one color per faction: every Alliance character is the same blue, every Horde character the same red
-    Alliance: ['#1b55a0'],
-    Horde: ['#b3231a'],
-    Other: ['#3a6a2c', '#6a5a22', '#4a4a4a', '#2c6a5a']
-  };
+  // one fixed color per faction
+  const FACTIONS = ['Alliance', 'Horde', 'Other'];
+  const FACTION_COLOR = { Alliance: '#1b55a0', Horde: '#b3231a', Other: '#3a6a2c' };
+  const groupOf = (f) => (f.faction === 'Alliance' || f.faction === 'Horde' ? f.faction : 'Other');
   const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 
   const view = $('view'), stage = $('stage'), img = $('mapImg'), svg = $('overlay');
@@ -452,7 +448,7 @@ function arrowSpots(pts, nw, nh) {
     flights: [], source: 'published', sourceName: '', savedAt: 0,
     published: null, publishedError: null,
     cont: 1414, hidden: new Set(), pinned: null, hover: null,
-    colors: new Map(), imgError: false, pendingFit: null,
+    imgError: false, pendingFit: null,
     nw: 1002, nh: 668, vw: 0, vh: 0, tx: 0, ty: 0, s: 1, minS: 0.1, maxS: 4, atFit: true
   };
   let routeEls = new Map(), markerEls = [], labelEls = [], gRoutes = null, scaled = [];
@@ -486,17 +482,6 @@ function arrowSpots(pts, nw, nh) {
     state.flights.forEach((f, i) => { f.id = i; });
     state.source = source; state.sourceName = name || ''; state.savedAt = savedAt || 0;
     state.pinned = null; state.hover = null; state.hidden = new Set(); state.pendingFit = null;
-    const chars = [];
-    for (const f of state.flights) if (!chars.some((c) => c.name === f.char)) chars.push({ name: f.char, faction: f.faction });
-    const order = { Alliance: 0, Horde: 1 };
-    chars.sort((a, b) => ((order[a.faction] ?? 2) - (order[b.faction] ?? 2)) || a.name.localeCompare(b.name));
-    const used = { Alliance: 0, Horde: 0, Other: 0 };
-    state.colors = new Map();
-    for (const c of chars) {
-      const fam = PALETTE[c.faction] ? c.faction : 'Other';
-      const pal = PALETTE[fam];
-      state.colors.set(c.name, pal[used[fam]++ % pal.length]);
-    }
     const latest = state.flights[0];
     const cont = latest && CONT[latest.continent] ? latest.continent : 1414;
     renderAll();
@@ -508,7 +493,7 @@ function arrowSpots(pts, nw, nh) {
       if (!raw) return null;
       const o = JSON.parse(raw);
       if (!o || !Array.isArray(o.flights)) return null;
-      const flights = o.flights.map((f) => normFlight(Object.assign({}, f, { points: f.pts, class: f.cls }), false)).filter(Boolean);
+      const flights = o.flights.map((f) => normFlight(Object.assign({}, f, { points: f.pts }), false)).filter(Boolean);
       return { name: o.name || 'FlightRecorder.lua', savedAt: o.savedAt || 0, flights: flights };
     } catch (e) { return null; }
   }
@@ -523,7 +508,7 @@ function arrowSpots(pts, nw, nh) {
       const text = await file.text();
       const flights = flightsFromLua(text);
       const now = Date.now();
-      writeStored(flights.map((f) => ({ char: f.char, faction: f.faction, cls: f.cls, from: f.from, to: f.to, hops: f.hops.map((h) => [h.from, h.to]), continent: f.continent, started: f.started, duration: f.duration, distance: f.distance, complete: f.complete, note: f.note, pts: f.pts })), file.name, now);
+      writeStored(flights.map((f) => ({ faction: f.faction, from: f.from, to: f.to, hops: f.hops.map((h) => [h.from, h.to]), continent: f.continent, started: f.started, duration: f.duration, distance: f.distance, complete: f.complete, note: f.note, pts: f.pts })), file.name, now);
       setData(flights, 'loaded', file.name, now);
     } catch (e) {
       setSource('Could not read ' + file.name + ': ' + e.message, true);
@@ -557,12 +542,12 @@ function arrowSpots(pts, nw, nh) {
     if (!fl.length) { s.textContent = 'No flights loaded.'; return; }
     const secs = fl.reduce((a, f) => a + f.duration, 0);
     const yds = fl.reduce((a, f) => a + f.distance, 0);
-    const names = Array.from(state.colors.keys());
+    const names = FACTIONS.filter((g) => fl.some((f) => groupOf(f) === g));
     const parts = [
       [String(fl.length), fl.length === 1 ? ' flight recorded' : ' flights recorded'],
       [fmtSpan(secs), ' in the air'],
       [fmtInt(yds), ' yd flown'],
-      [String(names.length), (names.length === 1 ? ' character' : ' characters') + ' (' + names.join(', ') + ')']
+      [String(names.length), (names.length === 1 ? ' faction' : ' factions') + ' (' + names.join(', ') + ')']
     ];
     parts.forEach((p, i) => {
       if (i) s.append(' · ');
@@ -573,20 +558,21 @@ function arrowSpots(pts, nw, nh) {
     const box = $('legend');
     box.textContent = '';
     let i = 0;
-    for (const [name, color] of state.colors) {
-      const count = state.flights.filter((f) => f.char === name).length;
+    for (const name of FACTIONS) {
+      const count = state.flights.filter((f) => groupOf(f) === name).length;
+      if (!count) continue;
       const b = el('button', 'chip');
       b.type = 'button';
       b.id = 'chip-' + (i++);
       b.setAttribute('aria-pressed', state.hidden.has(name) ? 'false' : 'true');
       b.title = (state.hidden.has(name) ? 'Show' : 'Hide') + ' ' + name + ' routes';
       const sw = el('span', 'sw');
-      sw.style.background = color;
+      sw.style.background = FACTION_COLOR[name];
       b.append(sw, el('span', '', name), el('span', 'count', String(count)));
       b.addEventListener('click', () => {
         if (state.hidden.has(name)) state.hidden.delete(name); else state.hidden.add(name);
         const pf = state.flights[state.pinned];
-        if (pf && state.hidden.has(pf.char)) state.pinned = null;
+        if (pf && state.hidden.has(groupOf(pf))) state.pinned = null;
         renderLegend(); renderList(); renderOverlay(); applyHighlight(); updateNote();
       });
       box.append(b);
@@ -601,9 +587,9 @@ function arrowSpots(pts, nw, nh) {
   function renderList() {
     const ul = $('list');
     ul.textContent = '';
-    const shown = state.flights.filter((f) => !state.hidden.has(f.char));
+    const shown = state.flights.filter((f) => !state.hidden.has(groupOf(f)));
     if (!shown.length) {
-      const li = el('li', 'empty', state.flights.length ? 'All characters are hidden. Turn one on above.' : 'No flights to show.');
+      const li = el('li', 'empty', state.flights.length ? 'Both factions are hidden. Turn one on above.' : 'No flights to show.');
       ul.append(li);
       return;
     }
@@ -625,9 +611,9 @@ function arrowSpots(pts, nw, nh) {
 
       const meta = el('div', 'meta');
       const sw = el('span', 'sw');
-      sw.style.background = state.colors.get(f.char) || '';
+      sw.style.background = FACTION_COLOR[groupOf(f)];
       const when = f.started ? fmtDate(f.started) : 'Unknown time';
-      meta.append(sw, el('span', '', f.char), el('span', '', when));
+      meta.append(sw, el('span', '', groupOf(f)), el('span', '', when));
       if (CONT[f.continent]) meta.append(el('span', '', CONT[f.continent].name));
       b.append(meta);
 
@@ -658,7 +644,7 @@ function arrowSpots(pts, nw, nh) {
       ? 'No flights recorded yet.'
       : 'No exported flights found. Double-click Update Flight Map.bat in this folder, or load FlightRecorder.lua above.';
     else if (!onCont.length) msg = 'No ' + CONT[state.cont].name + ' flights recorded yet.';
-    else if (onCont.every((f) => state.hidden.has(f.char))) msg = 'All characters with ' + CONT[state.cont].name + ' flights are hidden.';
+    else if (onCont.every((f) => state.hidden.has(groupOf(f)))) msg = 'All ' + CONT[state.cont].name + ' flights are hidden.';
     note.textContent = msg;
     note.hidden = !msg;
   }
@@ -671,11 +657,11 @@ function arrowSpots(pts, nw, nh) {
     gRoutes = sv('g', {});
     const gMarks = sv('g', {}), gLabels = sv('g', {});
     svg.append(gRoutes, gMarks, gLabels);
-    const flights = state.flights.filter((f) => f.continent === state.cont && !state.hidden.has(f.char) && f.pts.length >= 2);
+    const flights = state.flights.filter((f) => f.continent === state.cont && !state.hidden.has(groupOf(f)) && f.pts.length >= 2);
     const labels = []; // {x, y, name, ids}
     const place = (f, p, nodeName, kind) => {
       const x = p[1] * state.nw, y = p[2] * state.nh;
-      const color = state.colors.get(f.char) || '#444';
+      const color = FACTION_COLOR[groupOf(f)];
       const g = sv('g', {});
       const shape = kind === 'start'
         ? sv('circle', { r: 5, fill: color, class: 'mk' })
@@ -692,7 +678,7 @@ function arrowSpots(pts, nw, nh) {
     for (const f of flights) {
       const g = sv('g', { class: 'route' });
       const pts = f.pts.map((p) => (p[1] * state.nw).toFixed(1) + ',' + (p[2] * state.nh).toFixed(1)).join(' ');
-      const color = state.colors.get(f.char) || '#444';
+      const color = FACTION_COLOR[groupOf(f)];
       g.append(sv('polyline', { class: 'route-halo', points: pts }), sv('polyline', { class: 'route-line', points: pts, stroke: color }));
       for (const sp of arrowSpots(f.pts, state.nw, state.nh)) {
         const ag = sv('g', {});
@@ -829,7 +815,7 @@ function arrowSpots(pts, nw, nh) {
     if (!f) return;
     if (state.pinned === id) { state.pinned = null; applyHighlight(); return; }
     state.pinned = id;
-    if (state.hidden.has(f.char)) { state.hidden.delete(f.char); renderLegend(); }
+    if (state.hidden.has(groupOf(f))) { state.hidden.delete(groupOf(f)); renderLegend(); }
     if (CONT[f.continent] && f.continent !== state.cont) {
       state.pendingFit = id;
       renderList();

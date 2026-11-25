@@ -18,7 +18,7 @@ The repo root is the addon folder, the same pattern as the user's `E:\Projects\H
 | `.pkgmeta` | Packaging config in case it is ever published to CurseForge; map/ and tools/ don't ship |
 | `index.html`, `.nojekyll` | GitHub Pages only: the root page forwards to the map; `.nojekyll` serves files as-is. Neither ships |
 
-`map/flights.json` and `map/flights-data.js` are both generated. `flights.json` is git-ignored; `flights-data.js` is **committed** so the GitHub Pages map shows the flights.
+`map/flights.json` and `map/flights-data.js` are both generated. `flights.json` is git-ignored; `flights-data.js` is **committed** so the GitHub Pages map shows the flights. The exporter drops `char` and `class`, so the exported data has **no character names or classes**, only `faction`. (Commits before 2026-11-24 22:30 still contain names; the user accepted that.)
 
 ## Game environment
 
@@ -77,7 +77,7 @@ Each flight has these fields:
 - **Load FlightRecorder.lua button.** It also accepts drag-and-drop and parses the SavedVariables in JS (`parseLua`). The result is remembered in localStorage. Newer exported data wins over a remembered file.
 - **Drawing.**
   - Points are `[t, cx, cy]`, and pixel = (cx × naturalWidth, cy × naturalHeight).
-  - Routes are colored by faction: every Alliance character is the same blue (`#1b55a0`) and every Horde character the same red (`#b3231a`). The user asked for this; don't go back to a shade per character.
+  - **Faction only, no characters.** Routes are colored by faction: Alliance `#1b55a0`, Horde `#b3231a`, unknown faction ("Other") `#3a6a2c`. The legend has one toggle per faction, and list rows show the faction. No character name or class appears anywhere on the page, in the published data, or in localStorage (`normFlight` drops them, including for a loaded FlightRecorder.lua). The user asked for this; don't bring back per-character colors, filters or names.
   - Start (circle) and end (diamond) markers, labels and direction arrows keep a constant screen size through the `scaled` list and `applyScaled()`.
   - `arrowSpots()` places about one arrow per 80 map px, with the heading smoothed over 5% of the path.
   - The hovered or pinned route gets marching dashes, which are turned off under `prefers-reduced-motion`.
