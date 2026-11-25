@@ -11,7 +11,7 @@ The repo root is the addon folder, the same pattern as the user's `E:\Projects\H
 | `FlightRecorder.toc`, `FlightRecorder.lua` | The addon (interface 16001, no libraries, one file of Lua 5.1) |
 | `README.md`, `CHANGELOG.md` | User docs; both ship with the addon |
 | `tools/deploy.ps1` | Copies the addon into the game's AddOns folder |
-| `tools/flightmap_export.py` | Reads the SavedVariables and writes `map/flights.json` + `map/flights-data.js` (stdlib only) |
+| `tools/flightmap_export.py` | Reads the SavedVariables and writes `map/flights.json` + `map/flights-data.js` (stdlib only). Keys are sorted, because WoW reorders fields on every save, so data commits only show new flights |
 | `map/flight_map.html` | The route map page (works from disk and as a claude.ai Artifact) |
 | `map/maps/kalimdor.jpg`, `map/maps/eastern_kingdoms.jpg` | Forever continent art, 2004x1336 |
 | `map/Update Flight Map.bat` | What the user double-clicks: runs the exporter, commits and pushes only `map/flights-data.js` (the online map), then opens the local page |

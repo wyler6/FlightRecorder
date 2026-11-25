@@ -204,7 +204,9 @@ def main(argv):
     flights = [convert_flight(f) for f in db.get("flights", []) if isinstance(f, dict)]
     dst.parent.mkdir(parents=True, exist_ok=True)
     # ensure_ascii=True keeps the JSON valid as a JS literal (no raw U+2028/U+2029) and pure ASCII.
-    lines = [json.dumps(f, separators=(",", ":"), ensure_ascii=True) for f in flights]
+    # sort_keys=True: WoW saves table fields in a different order each time, so sorting keeps
+    # unchanged flights byte-identical and a data commit only shows the new flights.
+    lines = [json.dumps(f, separators=(",", ":"), ensure_ascii=True, sort_keys=True) for f in flights]
     text = "[\n" + ",\n".join(lines) + "\n]" if lines else "[]"
     dst.write_text(text + "\n", encoding="utf-8")
     js = dst.with_name("flights-data.js")
