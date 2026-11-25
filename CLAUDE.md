@@ -14,7 +14,7 @@ The repo root is the addon folder, the same pattern as the user's `E:\Projects\H
 | `tools/flightmap_export.py` | Reads the SavedVariables and writes `map/flights.json` + `map/flights-data.js` (stdlib only) |
 | `map/flight_map.html` | The route map page (works from disk and as a claude.ai Artifact) |
 | `map/maps/kalimdor.jpg`, `map/maps/eastern_kingdoms.jpg` | Forever continent art, 2004x1336 |
-| `map/Update Flight Map.bat` | What the user double-clicks: runs the exporter, then opens the page |
+| `map/Update Flight Map.bat` | What the user double-clicks: runs the exporter, commits and pushes only `map/flights-data.js` (the online map), then opens the local page |
 | `.pkgmeta` | Packaging config in case it is ever published to CurseForge; map/ and tools/ don't ship |
 | `index.html`, `.nojekyll` | GitHub Pages only: the root page forwards to the map; `.nojekyll` serves files as-is. Neither ships |
 
@@ -77,7 +77,7 @@ Each flight has these fields:
 - **Load FlightRecorder.lua button.** It also accepts drag-and-drop and parses the SavedVariables in JS (`parseLua`). The result is remembered in localStorage. Newer exported data wins over a remembered file.
 - **Drawing.**
   - Points are `[t, cx, cy]`, and pixel = (cx × naturalWidth, cy × naturalHeight).
-  - Routes are coloured by character: blue shades for Alliance, red for Horde.
+  - Routes are coloured by faction: every Alliance character is the same blue (`#1b55a0`) and every Horde character the same red (`#b3231a`). The user asked for this; don't go back to a shade per character.
   - Start (circle) and end (diamond) markers, labels and direction arrows keep a constant screen size through the `scaled` list and `applyScaled()`.
   - `arrowSpots()` places about one arrow per 80 map px, with the heading smoothed over 5% of the path.
   - The hovered or pinned route gets marching dashes, which are turned off under `prefers-reduced-motion`.
@@ -87,7 +87,7 @@ Each flight has these fields:
   - The art is Blizzard's, not covered by OpenMap's MIT licence; see OpenMap's `OpenMap/Media/Textures/Forever/NOTICE.md`. It has no rule against reposting, and OpenMap hosts the same tiles publicly.
 - **GitHub.** https://github.com/wyler6/FlightRecorder (public since 2026-11-24).
   - GitHub Pages serves `main` from the root: https://wyler6.github.io/FlightRecorder/ forwards to `map/flight_map.html`.
-  - To update the online flights: run the exporter (or `Update Flight Map.bat`), then commit and push `map/flights-data.js`.
+  - `Update Flight Map.bat` updates the online flights by itself: after the export it commits only `map/flights-data.js` ("Update flight data", no Co-Authored-By) and pushes. If nothing changed it skips the commit; if git is missing it skips publishing; on a commit or push failure it pauses with a message. It always opens the local page at the end. To test it without opening the browser, run a copy without the last `start` line.
   - Never commit anything containing the user's Windows user folder path (it is their real name). Use `%LOCALAPPDATA%` or the `py` launcher instead. History was rewritten once to remove it.
 - **Published claude.ai copy.** https://claude.ai/artifact/H7BwKaVhg4FupWs4hc3E34 (private).
   - To update it, publish `map/flight_map.html` with `url` set to that link and `files` set to `flights.json` and `flights-data.js`; the maps are already uploaded.

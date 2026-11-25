@@ -36,7 +36,7 @@ Each flight:
 ## Flight map
 `map\flight_map.html` is a companion web page that draws every recorded flight over the continent maps (Kalimdor and Eastern Kingdoms), so you can see the exact routes taken.
 
-To update it, double-click `map\Update Flight Map.bat` after a /reload or logout in WoW (that is when the game writes the SavedVariables file). The script converts the data and opens the page.
+To update it, double-click `map\Update Flight Map.bat` after a /reload or logout in WoW (that is when the game writes the SavedVariables file). The script converts the data, publishes it to the online map (it commits and pushes `map/flights-data.js` to GitHub), and opens the page.
 
 You can also open the page directly and use the "Load FlightRecorder.lua" button to pick a SavedVariables file by hand.
 
