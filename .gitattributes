@@ -6,7 +6,7 @@
 # The launcher is run by cmd.exe, which wants CRLF.
 *.bat text eol=crlf
 
-# Never line-ending-normalise the art; a corrupted texture fails confusingly.
+# Never line-ending-normalize the art; a corrupted texture fails confusingly.
 *.jpg binary
 *.tga binary
 *.png binary

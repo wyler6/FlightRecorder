@@ -77,14 +77,14 @@ Each flight has these fields:
 - **Load FlightRecorder.lua button.** It also accepts drag-and-drop and parses the SavedVariables in JS (`parseLua`). The result is remembered in localStorage. Newer exported data wins over a remembered file.
 - **Drawing.**
   - Points are `[t, cx, cy]`, and pixel = (cx × naturalWidth, cy × naturalHeight).
-  - Routes are coloured by faction: every Alliance character is the same blue (`#1b55a0`) and every Horde character the same red (`#b3231a`). The user asked for this; don't go back to a shade per character.
+  - Routes are colored by faction: every Alliance character is the same blue (`#1b55a0`) and every Horde character the same red (`#b3231a`). The user asked for this; don't go back to a shade per character.
   - Start (circle) and end (diamond) markers, labels and direction arrows keep a constant screen size through the `scaled` list and `applyScaled()`.
   - `arrowSpots()` places about one arrow per 80 map px, with the heading smoothed over 5% of the path.
   - The hovered or pinned route gets marching dashes, which are turned off under `prefers-reduced-motion`.
 - **Map art.** Built from the OpenMap addon's Forever tiles: https://github.com/openmap-world/openmap, `OpenMap/Media/Textures/Forever/MapArt/<1414|1415>_<1..12>.tga`.
   - The tiles form a 4x3 grid of 256 px (1024x768). Crop the top-left 1002x668 (the uiMap canvas), then Lanczos 2x to 2004x1336, JPEG quality 88.
   - Alignment was verified by drawing real flights on both maps: Ratchet → Freewind Post on Kalimdor, Tarren Mill → Undercity on Eastern Kingdoms.
-  - The art is Blizzard's, not covered by OpenMap's MIT licence; see OpenMap's `OpenMap/Media/Textures/Forever/NOTICE.md`. It has no rule against reposting, and OpenMap hosts the same tiles publicly.
+  - The art is Blizzard's, not covered by OpenMap's MIT license; see OpenMap's `OpenMap/Media/Textures/Forever/NOTICE.md`. It has no rule against reposting, and OpenMap hosts the same tiles publicly.
 - **GitHub.** https://github.com/wyler6/FlightRecorder (public since 2026-11-24).
   - GitHub Pages serves `main` from the root: https://wyler6.github.io/FlightRecorder/ forwards to `map/flight_map.html`.
   - `Update Flight Map.bat` updates the online flights by itself: after the export it commits only `map/flights-data.js` ("Update flight data", no Co-Authored-By) and pushes. If nothing changed it skips the commit; if git is missing it skips publishing; on a commit or push failure it pauses with a message. It always opens the local page at the end. To test it without opening the browser, run a copy without the last `start` line.
@@ -96,7 +96,7 @@ Each flight has these fields:
   - Artifact rules to keep:
     - fonts only from Google Fonts
     - no other external resources
-    - colours as tokens with light and dark blocks
+    - colors as tokens with light and dark blocks
     - side gutter `max(16px, env(safe-area-inset-*))`
     - no alert/confirm/prompt or download links
 
@@ -114,6 +114,7 @@ Each flight has these fields:
 - **Never open the user's browser.** No Chrome/browser tools, and no `start` on an .html, unless they ask. Tell subagents the same.
 - The user's global CLAUDE.md (architect and delegate) applies here too.
 - Keep answers short and plain. Say what was verified and what wasn't.
+- **American spelling everywhere**: replies, docs, comments, UI text, commit messages (color, gray, license, -ize).
 
 ## Ideas not done yet
 
