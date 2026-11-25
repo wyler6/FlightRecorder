@@ -1,6 +1,6 @@
 # FlightRecorder
 
-A World of Warcraft **Forever** addon that records the exact path of every flight-path (taxi) trip, plus a web page that draws the recorded routes on Forever's continent maps. Built 2026-11-24 with Claude Code. The user plays characters of both factions on one account.
+A World of Warcraft **Forever** addon that records the exact path of every flight-path (taxi) trip, plus a web page that draws the recorded routes on Forever's continent maps. Built 2026-11-24 with Claude Code. The user plays characters of both factions on one account. **The repo is public: never write character names into it** (files, data or commit messages). Claude's local memory has them.
 
 ## Layout
 
@@ -18,7 +18,7 @@ The repo root is the addon folder, the same pattern as the user's `E:\Projects\H
 | `.pkgmeta` | Packaging config in case it is ever published to CurseForge; map/ and tools/ don't ship |
 | `index.html`, `.nojekyll` | GitHub Pages only: the root page forwards to the map; `.nojekyll` serves files as-is. Neither ships |
 
-`map/flights.json` and `map/flights-data.js` are both generated. `flights.json` is git-ignored; `flights-data.js` is **committed** so the GitHub Pages map shows the flights. The exporter drops `char` and `class`, so the exported data has **no character names or classes**, only `faction`. (Commits before 2026-11-24 22:30 still contain names; the user accepted that.)
+`map/flights.json` and `map/flights-data.js` are both generated. `flights.json` is git-ignored; `flights-data.js` is **committed** so the GitHub Pages map shows the flights. The exporter drops `char` and `class`, so the exported data has **no character names or classes**, only `faction`.
 
 ## Game environment
 
@@ -74,10 +74,10 @@ Each flight has these fields:
 
 - **File format.** It's a single file with **no `<!doctype>`, `<html>`, `<head>` or `<body>` on purpose**. The claude.ai Artifact publisher wraps it, and browsers are fine with it locally. It starts with `<title>`, then `<meta name="claude:viewport-fit-sides" content="cover">`, then `<style>`.
 - **Data loading.** `flights-data.js` sets `window.FLIGHT_DATA`. That makes it work from `file://`, where `fetch` is blocked. Otherwise it fetches `flights.json`.
-- **Load FlightRecorder.lua button.** It also accepts drag-and-drop and parses the SavedVariables in JS (`parseLua`). The result is remembered in localStorage. Newer exported data wins over a remembered file.
+- **No header, no file loading.** At the user's request the title, stats line and the "Load FlightRecorder.lua" loader were removed; the page starts with the continent, faction and zoom bar, and only shows the exported data. There's no drag-and-drop, no `parseLua` and no localStorage; at start-up it removes the old `flightmap.loaded.v1` key once. If the data can't load, the map note says so.
 - **Drawing.**
   - Points are `[t, cx, cy]`, and pixel = (cx × naturalWidth, cy × naturalHeight).
-  - **Faction only, no characters.** Routes are colored by faction: Alliance `#1b55a0`, Horde `#b3231a`, unknown faction ("Other") `#3a6a2c`. The legend has one toggle per faction, and list rows show the faction. No character name or class appears anywhere on the page, in the published data, or in localStorage (`normFlight` drops them, including for a loaded FlightRecorder.lua). The user asked for this; don't bring back per-character colors, filters or names.
+  - **Faction only, no characters.** Routes are colored by faction: Alliance `#1b55a0`, Horde `#b3231a`, unknown faction ("Other") `#3a6a2c`. The legend has one toggle per faction, and list rows show the faction. No character name or class appears anywhere on the page or in the published data (the exporter drops `char` and `class`). The user asked for this; don't bring back per-character colors, filters or names.
   - Start (circle) and end (diamond) markers, labels and direction arrows keep a constant screen size through the `scaled` list and `applyScaled()`.
   - `arrowSpots()` places about one arrow per 80 map px, with the heading smoothed over 5% of the path.
   - The hovered or pinned route gets marching dashes, which are turned off under `prefers-reduced-motion`.
@@ -88,7 +88,9 @@ Each flight has these fields:
 - **GitHub.** https://github.com/wyler6/FlightRecorder (public since 2026-11-24).
   - GitHub Pages serves `main` from the root: https://wyler6.github.io/FlightRecorder/ forwards to `map/flight_map.html`.
   - `Update Flight Map.bat` updates the online flights by itself: after the export it commits only `map/flights-data.js` ("Update flight data", no Co-Authored-By) and pushes. If nothing changed it skips the commit; if git is missing it skips publishing; on a commit or push failure it pauses with a message. It always opens the local page at the end. To test it without opening the browser, run a copy without the last `start` line.
-  - Never commit anything containing the user's Windows user folder path (it is their real name). Use `%LOCALAPPDATA%` or the `py` launcher instead. History was rewritten once to remove it.
+  - Never commit anything containing the user's Windows user folder path (it is their real name). Use `%LOCALAPPDATA%` or the `py` launcher instead.
+  - Never commit character names either.
+  - History was rewritten twice on 2026-11-24 to remove both, each time followed by deleting and recreating the GitHub repo, since a force-push leaves old commits reachable from the Activity page.
 - **Published claude.ai copy.** https://claude.ai/artifact/H7BwKaVhg4FupWs4hc3E34 (private).
   - To update it, publish `map/flight_map.html` with `url` set to that link and `files` set to `flights.json` and `flights-data.js`; the maps are already uploaded.
   - In the old session a Read permission rule blocked publishing `flights.json`. If that happens again, ask the user.
@@ -105,7 +107,7 @@ Each flight has these fields:
 - **Lua.** No Lua interpreter is installed. To syntax-check, make a venv (`.venv/`, git-ignored), install `luaparser`, and run `luaparser.ast.parse` on the file. Logic can only be tested in game, so the user tests on their next flight.
 - **JavaScript.** Deno is at `%LOCALAPPDATA%\Microsoft\WinGet\Packages\DenoLand.Deno_Microsoft.Winget.Source_8wekyb3d8bbwe\deno.exe`.
   - Extract the main inline `<script>` and run `deno check --no-config`.
-  - For logic, eval `flights-data.js` with `globalThis.window = globalThis` and call the pure functions (`parseLua`, `normFlight`, `arrowSpots`).
+  - For logic, eval `flights-data.js` with `globalThis.window = globalThis` and call the pure functions (`normFlight`, `arrowSpots`).
 - **Python.** `%LOCALAPPDATA%\Programs\Python\Python310\python.exe`; the `py` launcher also works.
 - **Map alignment.** Draw a flight's cx/cy onto the jpg with Pillow, in the venv, and look at it with the Read tool.
 

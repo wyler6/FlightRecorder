@@ -38,8 +38,6 @@ Each flight:
 
 To update it, double-click `map\Update Flight Map.bat` after a /reload or logout in WoW (that is when the game writes the SavedVariables file). The script converts the data, publishes it to the online map (it commits and pushes `map/flights-data.js` to GitHub), and opens the page.
 
-You can also open the page directly and use the "Load FlightRecorder.lua" button to pick a SavedVariables file by hand.
-
 An online copy runs on GitHub Pages: https://wyler6.github.io/FlightRecorder/
 
 Map art: the Forever continent tiles come from the OpenMap addon, https://github.com/openmap-world/openmap. The art is Blizzard's; see OpenMap's `OpenMap/Media/Textures/Forever/NOTICE.md`.

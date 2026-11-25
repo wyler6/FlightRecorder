@@ -71,29 +71,14 @@ button, input { font: inherit; color: inherit; }
   flex-direction: column;
   gap: 14px;
 }
-.top { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-h1 { margin: 0; font-size: 22px; font-weight: 600; letter-spacing: 0.01em; }
-.summary { margin: 0; color: var(--muted); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
-.summary b { color: var(--fg); font-weight: 600; font-family: var(--font-num); font-size: 0.95em; }
-
-.loader {
-  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px;
-  padding-block: 10px; border-block: 1px solid var(--rule);
-}
-.loader > * { min-width: 0; }
-.btn, .filebtn {
+.btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
   min-height: 34px; padding-inline: 12px;
   background: var(--panel); border: 1px solid var(--rule); border-radius: 3px;
   cursor: pointer; white-space: nowrap;
 }
-.btn:hover, .filebtn:hover { border-color: var(--accent); }
-.filebtn:focus-within { outline: 2px solid var(--focus); outline-offset: 2px; }
+.btn:hover { border-color: var(--accent); }
 .vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-.hint { margin: 0; color: var(--muted); font-size: 13px; overflow-wrap: anywhere; flex: 1 1 280px; }
-.hint code { font-family: var(--font-num); font-size: 12px; }
-.source { margin: 0; font-size: 13px; color: var(--muted); flex: 1 1 100%; }
-.source.err { color: var(--warn); }
 
 .layout { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 16px; align-items: start; }
 .mapcol { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
@@ -163,8 +148,6 @@ h1 { margin: 0; font-size: 22px; font-weight: 600; letter-spacing: 0.01em; }
 .tag { font-size: 11px; font-family: var(--font-ui); padding: 0 6px; border: 1px solid var(--warn); color: var(--warn); border-radius: 3px; text-transform: uppercase; letter-spacing: 0.04em; }
 .empty { padding: 14px 12px; color: var(--muted); }
 
-.drop { position: fixed; inset: 0; z-index: 10; display: flex; align-items: center; justify-content: center; background: var(--scrim); border: 3px dashed var(--accent); font-size: 18px; pointer-events: none; }
-
 @media (max-width: 900px) {
   .layout { grid-template-columns: minmax(0, 1fr); }
   .list { max-height: none; }
@@ -177,17 +160,7 @@ h1 { margin: 0; font-size: 22px; font-weight: 600; letter-spacing: 0.01em; }
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;600&display=swap">
 
 <div class="app">
-  <header class="top">
-    <h1>Flight Routes of Azeroth</h1>
-    <p class="summary" id="summary">Loading flights.</p>
-  </header>
-
-  <section class="loader" aria-label="Flight data source">
-    <label class="filebtn" for="fileInput"><span>Load FlightRecorder.lua</span><input class="vh" type="file" id="fileInput" accept=".lua,.txt,text/plain"></label>
-    <button type="button" class="btn" id="resetData" hidden>Use published data</button>
-    <p class="hint">Find the file at <code>World of Warcraft\_forever_\WTF\Account\&lt;account&gt;\SavedVariables\FlightRecorder.lua</code>. Pick it here or drop it anywhere on this page.</p>
-    <p class="source" id="source" role="status"></p>
-  </section>
+  <h1 class="vh">Flight Routes of Azeroth</h1>
 
   <div class="layout">
     <section class="mapcol" aria-label="Route map">
@@ -219,148 +192,18 @@ h1 { margin: 0; font-size: 22px; font-weight: 600; letter-spacing: 0.01em; }
     </aside>
   </div>
 </div>
-<div class="drop" id="dropOverlay" hidden>Drop FlightRecorder.lua to load it</div>
 
 <script src="flights-data.js"></script>
 <script>
-// ==LUA-PARSER-START==
-// Parser for the WoW SavedVariables subset of Lua: nested tables, ["key"] = value, bare array items,
-// strings, numbers, true/false/nil, comments. Returns an object of top-level assignments.
-// Tables with only bare items become arrays; tables with any keys become objects.
-function parseLua(src) {
-  let i = 0;
-  const n = src.length;
-  const reNum = /-?(?:0[xX][0-9a-fA-F]+|\d+\.?\d*(?:[eE][+-]?\d+)?|\.\d+(?:[eE][+-]?\d+)?)/y;
-  const reId = /[A-Za-z_][A-Za-z0-9_]*/y;
-  const reDec = /\d{1,3}/y;
-  const ESC = { n: '\n', t: '\t', r: '\r', '\\': '\\', '"': '"', "'": "'", a: '\x07', b: '\b', f: '\f', v: '\v' };
-  function fail(msg) {
-    const line = src.slice(0, i).split('\n').length;
-    throw new Error('Lua parse error at line ' + line + ': ' + msg);
-  }
-  function take(re) {
-    re.lastIndex = i;
-    const m = re.exec(src);
-    if (!m) return null;
-    i = re.lastIndex;
-    return m[0];
-  }
-  function ws() {
-    while (i < n) {
-      const c = src[i];
-      if (c === ' ' || c === '\t' || c === '\r' || c === '\n') { i++; }
-      else if (c === '-' && src[i + 1] === '-') {
-        const m = /^--\[(=*)\[/.exec(src.slice(i, i + 40));
-        if (m) {
-          const end = src.indexOf(']' + m[1] + ']', i);
-          i = end < 0 ? n : end + m[1].length + 2;
-        } else {
-          const nl = src.indexOf('\n', i);
-          i = nl < 0 ? n : nl + 1;
-        }
-      } else break;
-    }
-  }
-  function str() {
-    const q = src[i++];
-    let out = '';
-    for (;;) {
-      if (i >= n) fail('unterminated string');
-      const c = src[i];
-      if (c === q) { i++; return out; }
-      if (c === '\\') {
-        i++;
-        const e = src[i];
-        if (e >= '0' && e <= '9') { const d = take(reDec); out += String.fromCharCode(parseInt(d, 10)); continue; }
-        out += e === '\n' ? '\n' : (Object.prototype.hasOwnProperty.call(ESC, e) ? ESC[e] : e);
-        i++;
-      } else { out += c; i++; }
-    }
-  }
-  function value() {
-    ws();
-    const c = src[i];
-    if (c === '{') return table();
-    if (c === '"' || c === "'") return str();
-    const num = take(reNum);
-    if (num !== null) return /^-?0[xX]/.test(num) ? parseInt(num, 16) : parseFloat(num);
-    const id = take(reId);
-    if (id !== null) {
-      if (id === 'true') return true;
-      if (id === 'false') return false;
-      if (id === 'nil') return null;
-      fail('unexpected identifier ' + id);
-    }
-    fail('unexpected character ' + JSON.stringify(c));
-  }
-  function table() {
-    i++; // {
-    const items = [];
-    const keyed = {};
-    let hasKeys = false;
-    for (;;) {
-      ws();
-      const c = src[i];
-      if (c === undefined) fail('unterminated table');
-      if (c === '}') { i++; break; }
-      if (c === ',' || c === ';') { i++; continue; }
-      if (c === '[') {
-        i++;
-        const k = value();
-        ws();
-        if (src[i] !== ']') fail("expected ']'");
-        i++; ws();
-        if (src[i] !== '=') fail("expected '='");
-        i++;
-        const v = value();
-        if (v !== null) { keyed[String(k)] = v; hasKeys = true; }
-        continue;
-      }
-      const save = i;
-      const id = take(reId);
-      if (id !== null && id !== 'true' && id !== 'false' && id !== 'nil') {
-        ws();
-        if (src[i] === '=' && src[i + 1] !== '=') {
-          i++;
-          const v = value();
-          if (v !== null) { keyed[id] = v; hasKeys = true; }
-          continue;
-        }
-      }
-      i = save;
-      items.push(value());
-    }
-    if (hasKeys) {
-      items.forEach((v, idx) => { if (!(String(idx + 1) in keyed)) keyed[String(idx + 1)] = v; });
-      return keyed;
-    }
-    return items;
-  }
-  const out = {};
-  for (;;) {
-    ws();
-    if (i >= n) return out;
-    const name = take(reId);
-    if (name === null) fail('expected identifier');
-    ws();
-    if (src[i] !== '=') fail("expected '='");
-    i++;
-    out[name] = value();
-  }
-}
-// ==LUA-PARSER-END==
-
 // ==NORMALIZE-START==
-// Turns a flight from either source into one shape. fromLua is true for raw SavedVariables data, where a
-// point is [t, y, x, cx, cy]; in flights.json a point is already [t, cx, cy].
-function normFlight(f, fromLua) {
+// Turns an exported flight into the shape the page uses. A point is [t, cx, cy] with cx/cy in 0..1.
+function normFlight(f) {
   if (!f || typeof f !== 'object' || Array.isArray(f)) return null;
   const pts = [];
   if (Array.isArray(f.points)) {
     for (const p of f.points) {
       if (!Array.isArray(p)) continue;
-      const cx = fromLua ? p[3] : p[1];
-      const cy = fromLua ? p[4] : p[2];
+      const cx = p[1], cy = p[2];
       if (typeof cx === 'number' && typeof cy === 'number') pts.push([p[0], Math.round(cx * 1e5) / 1e5, Math.round(cy * 1e5) / 1e5]);
     }
   }
@@ -385,15 +228,6 @@ function normFlight(f, fromLua) {
     note: String(f.note ?? ''),
     pts: pts
   };
-}
-function flightsFromLua(text) {
-  const data = parseLua(text);
-  const db = data.FlightRecorderDB;
-  if (!db || typeof db !== 'object') throw new Error('FlightRecorderDB was not found in that file.');
-  let list = db.flights;
-  if (list && !Array.isArray(list)) list = Object.values(list);
-  if (!Array.isArray(list)) list = [];
-  return list.map((f) => normFlight(f, true)).filter(Boolean);
 }
 // ==NORMALIZE-END==
 
@@ -432,7 +266,6 @@ function arrowSpots(pts, nw, nh) {
   'use strict';
   const $ = (id) => document.getElementById(id);
   const SVGNS = 'http://www.w3.org/2000/svg';
-  const STORE_KEY = 'flightmap.loaded.v1';
   const CONT = {
     1414: { name: 'Kalimdor', img: 'maps/kalimdor.jpg', btn: 'contKalimdor', count: 'countKalimdor' },
     1415: { name: 'Eastern Kingdoms', img: 'maps/eastern_kingdoms.jpg', btn: 'contEK', count: 'countEK' }
@@ -445,8 +278,7 @@ function arrowSpots(pts, nw, nh) {
 
   const view = $('view'), stage = $('stage'), img = $('mapImg'), svg = $('overlay');
   const state = {
-    flights: [], source: 'published', sourceName: '', savedAt: 0,
-    published: null, publishedError: null,
+    flights: [], loadError: '',
     cont: 1414, hidden: new Set(), pinned: null, hover: null,
     imgError: false, pendingFit: null,
     nw: 1002, nh: 668, vw: 0, vh: 0, tx: 0, ty: 0, s: 1, minS: 0.1, maxS: 4, atFit: true
@@ -458,10 +290,6 @@ function arrowSpots(pts, nw, nh) {
   const short = (name) => String(name).split(',')[0].trim();
   const fmtInt = (v) => Math.round(v).toLocaleString('en-US');
   const fmtDur = (sec) => { const t = Math.round(sec); return Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0'); };
-  const fmtSpan = (sec) => {
-    const t = Math.round(sec), h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), s = t % 60;
-    return h ? h + 'h ' + m + 'm' : (m ? m + 'm ' + s + 's' : s + 's');
-  };
   const fmtDate = (ts) => new Date(ts * 1000).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
   function el(tag, cls, text) {
     const e = document.createElement(tag);
@@ -474,86 +302,19 @@ function arrowSpots(pts, nw, nh) {
     for (const k in attrs) e.setAttribute(k, attrs[k]);
     return e;
   }
-  const plural = (n, w) => n + ' ' + w + (n === 1 ? '' : 's');
 
   // ---------- data ----------
-  function setData(list, source, name, savedAt) {
+  function setData(list) {
     state.flights = list.slice().sort((a, b) => b.started - a.started);
     state.flights.forEach((f, i) => { f.id = i; });
-    state.source = source; state.sourceName = name || ''; state.savedAt = savedAt || 0;
     state.pinned = null; state.hover = null; state.hidden = new Set(); state.pendingFit = null;
     const latest = state.flights[0];
     const cont = latest && CONT[latest.continent] ? latest.continent : 1414;
     renderAll();
     setContinent(cont, true);
   }
-  function readStored() {
-    try {
-      const raw = localStorage.getItem(STORE_KEY);
-      if (!raw) return null;
-      const o = JSON.parse(raw);
-      if (!o || !Array.isArray(o.flights)) return null;
-      const flights = o.flights.map((f) => normFlight(Object.assign({}, f, { points: f.pts }), false)).filter(Boolean);
-      return { name: o.name || 'FlightRecorder.lua', savedAt: o.savedAt || 0, flights: flights };
-    } catch (e) { return null; }
-  }
-  function writeStored(flights, name, savedAt) {
-    try { localStorage.setItem(STORE_KEY, JSON.stringify({ name: name, savedAt: savedAt, flights: flights })); } catch (e) { /* quota or blocked storage: ignore */ }
-  }
-  function clearStored() { try { localStorage.removeItem(STORE_KEY); } catch (e) { /* ignore */ } }
 
-  async function loadFile(file) {
-    if (!file) return;
-    try {
-      const text = await file.text();
-      const flights = flightsFromLua(text);
-      const now = Date.now();
-      writeStored(flights.map((f) => ({ faction: f.faction, from: f.from, to: f.to, hops: f.hops.map((h) => [h.from, h.to]), continent: f.continent, started: f.started, duration: f.duration, distance: f.distance, complete: f.complete, note: f.note, pts: f.pts })), file.name, now);
-      setData(flights, 'loaded', file.name, now);
-    } catch (e) {
-      setSource('Could not read ' + file.name + ': ' + e.message, true);
-    }
-  }
-  function usePublished() {
-    clearStored();
-    setData(state.published || [], 'published');
-  }
-  function setSource(msg, isErr) {
-    const p = $('source');
-    p.textContent = msg;
-    p.classList.toggle('err', !!isErr);
-  }
-  function updateSource() {
-    if (state.source === 'loaded') {
-      setSource('Showing ' + state.sourceName + ', loaded ' + (state.savedAt ? fmtDate(state.savedAt / 1000) : 'earlier') + ' and remembered in this browser.', false);
-    } else if (state.published) {
-      setSource('Showing the exported flights.', false);
-    } else {
-      setSource('No exported flights found. Double-click Update Flight Map.bat in this folder, or load FlightRecorder.lua above.', true);
-    }
-    $('resetData').hidden = state.source !== 'loaded';
-  }
-
-  // ---------- render: summary, legend, list, counts ----------
-  function renderSummary() {
-    const fl = state.flights;
-    const s = $('summary');
-    s.textContent = '';
-    if (!fl.length) { s.textContent = 'No flights loaded.'; return; }
-    const secs = fl.reduce((a, f) => a + f.duration, 0);
-    const yds = fl.reduce((a, f) => a + f.distance, 0);
-    const names = FACTIONS.filter((g) => fl.some((f) => groupOf(f) === g));
-    const parts = [
-      [String(fl.length), fl.length === 1 ? ' flight recorded' : ' flights recorded'],
-      [fmtSpan(secs), ' in the air'],
-      [fmtInt(yds), ' yd flown'],
-      [String(names.length), (names.length === 1 ? ' faction' : ' factions') + ' (' + names.join(', ') + ')']
-    ];
-    parts.forEach((p, i) => {
-      if (i) s.append(' · ');
-      s.append(el('b', '', p[0]), p[1]);
-    });
-  }
+  // ---------- render: legend, list, counts ----------
   function renderLegend() {
     const box = $('legend');
     box.textContent = '';
@@ -633,16 +394,14 @@ function arrowSpots(pts, nw, nh) {
     }
   }
   function renderAll() {
-    renderSummary(); renderLegend(); renderList(); renderCounts(); updateSource();
+    renderLegend(); renderList(); renderCounts();
   }
   function updateNote() {
     const note = $('mapNote');
     const onCont = state.flights.filter((f) => f.continent === state.cont);
     let msg = '';
     if (state.imgError) msg = 'Map image ' + CONT[state.cont].img + ' was not found next to this page.';
-    else if (!state.flights.length) msg = state.published || state.source === 'loaded'
-      ? 'No flights recorded yet.'
-      : 'No exported flights found. Double-click Update Flight Map.bat in this folder, or load FlightRecorder.lua above.';
+    else if (!state.flights.length) msg = state.loadError ? 'Could not load the flight data (' + state.loadError + ').' : 'No flights recorded yet.';
     else if (!onCont.length) msg = 'No ' + CONT[state.cont].name + ' flights recorded yet.';
     else if (onCont.every((f) => state.hidden.has(groupOf(f)))) msg = 'All ' + CONT[state.cont].name + ' flights are hidden.';
     note.textContent = msg;
@@ -892,53 +651,24 @@ function arrowSpots(pts, nw, nh) {
     }).observe(view);
   }
 
-  // ---------- file loading ----------
-  $('fileInput').addEventListener('change', (e) => {
-    const f = e.target.files && e.target.files[0];
-    if (f) loadFile(f);
-    e.target.value = '';
-  });
-  $('resetData').addEventListener('click', usePublished);
-  const overlay = $('dropOverlay');
-  let dragDepth = 0;
-  const hasFiles = (e) => e.dataTransfer && Array.from(e.dataTransfer.types || []).indexOf('Files') >= 0;
-  window.addEventListener('dragenter', (e) => { if (hasFiles(e)) { dragDepth++; overlay.hidden = false; } });
-  window.addEventListener('dragleave', (e) => { if (hasFiles(e)) { dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) overlay.hidden = true; } });
-  window.addEventListener('dragover', (e) => { if (hasFiles(e)) e.preventDefault(); });
-  window.addEventListener('drop', (e) => {
-    if (!hasFiles(e)) return;
-    e.preventDefault();
-    dragDepth = 0; overlay.hidden = true;
-    const f = e.dataTransfer.files && e.dataTransfer.files[0];
-    if (f) loadFile(f);
-  });
-
   // ---------- start ----------
   async function start() {
-    const stored = readStored();
+    try { localStorage.removeItem('flightmap.loaded.v1'); } catch (e) { /* storage blocked: ignore */ }
     state.imgError = false;
-    if (stored) setData(stored.flights, 'loaded', stored.name, stored.savedAt);
-    else { renderAll(); setContinent(state.cont, true); }
-    if (Array.isArray(window.FLIGHT_DATA)) {
-      state.published = window.FLIGHT_DATA.map((f) => normFlight(f, false)).filter(Boolean);
-    } else {
-      try {
+    let list = [];
+    try {
+      let arr = window.FLIGHT_DATA;
+      if (!Array.isArray(arr)) {
         const r = await fetch('flights.json', { cache: 'no-cache' });
         if (!r.ok) throw new Error('HTTP ' + r.status);
-        const arr = await r.json();
+        arr = await r.json();
         if (!Array.isArray(arr)) throw new Error('flights.json is not a list');
-        state.published = arr.map((f) => normFlight(f, false)).filter(Boolean);
-      } catch (e) {
-        state.published = null; state.publishedError = e;
       }
+      list = arr.map((f) => normFlight(f)).filter(Boolean);
+    } catch (e) {
+      state.loadError = e.message || String(e);
     }
-    // a republish with newer flights than the remembered file wins (the remembered file is then dropped)
-    const newest = (l) => l.reduce((m, f) => Math.max(m, f.started || 0), 0);
-    if (stored && state.published && newest(state.published) > newest(stored.flights)) {
-      clearStored();
-      setData(state.published, 'published');
-    } else if (!stored) setData(state.published || [], 'published');
-    else updateSource();
+    setData(list);
     updateNote();
   }
   start();
