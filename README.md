@@ -40,7 +40,9 @@ To update it, double-click `map\Update Flight Map.bat` after a /reload or logout
 
 You can also open the page directly and use the "Load FlightRecorder.lua" button to pick a SavedVariables file by hand.
 
-Map art: the Forever continent tiles come from the OpenMap addon, https://github.com/openmap-world/openmap. The art is Blizzard's; see OpenMap's `Media/Textures/NOTICE.md`.
+An online copy runs on GitHub Pages: https://wyler6.github.io/FlightRecorder/
+
+Map art: the Forever continent tiles come from the OpenMap addon, https://github.com/openmap-world/openmap. The art is Blizzard's; see OpenMap's `OpenMap/Media/Textures/Forever/NOTICE.md`.
 
 ## Development
 - `pwsh tools/deploy.ps1` copies the addon into the game. A full game restart is only needed the first time a new addon appears; after that, /reload.

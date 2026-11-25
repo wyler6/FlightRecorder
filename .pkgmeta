@@ -15,3 +15,5 @@ ignore:
   - .gitattributes
   - .gitignore
   - .pkgmeta
+  - .nojekyll
+  - index.html

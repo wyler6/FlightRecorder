@@ -16,8 +16,9 @@ The repo root is the addon folder, the same pattern as the user's `E:\Projects\H
 | `map/maps/kalimdor.jpg`, `map/maps/eastern_kingdoms.jpg` | Forever continent art, 2004x1336 |
 | `map/Update Flight Map.bat` | What the user double-clicks: runs the exporter, then opens the page |
 | `.pkgmeta` | Packaging config in case it is ever published to CurseForge; map/ and tools/ don't ship |
+| `index.html`, `.nojekyll` | GitHub Pages only: the root page forwards to the map; `.nojekyll` serves files as-is. Neither ships |
 
-`map/flights.json` and `map/flights-data.js` are generated and git-ignored.
+`map/flights.json` and `map/flights-data.js` are both generated. `flights.json` is git-ignored; `flights-data.js` is **committed** so the GitHub Pages map shows the flights.
 
 ## Game environment
 
@@ -83,8 +84,12 @@ Each flight has these fields:
 - **Map art.** Built from the OpenMap addon's Forever tiles: https://github.com/openmap-world/openmap, `OpenMap/Media/Textures/Forever/MapArt/<1414|1415>_<1..12>.tga`.
   - The tiles form a 4x3 grid of 256 px (1024x768). Crop the top-left 1002x668 (the uiMap canvas), then Lanczos 2x to 2004x1336, JPEG quality 88.
   - Alignment was verified by drawing real flights on both maps: Ratchet → Freewind Post on Kalimdor, Tarren Mill → Undercity on Eastern Kingdoms.
-  - The art is Blizzard's. Read OpenMap's `Media/Textures/NOTICE.md` before making this repo public.
-- **Published copy.** https://claude.ai/artifact/H7BwKaVhg4FupWs4hc3E34 (private).
+  - The art is Blizzard's, not covered by OpenMap's MIT licence; see OpenMap's `OpenMap/Media/Textures/Forever/NOTICE.md`. It has no rule against reposting, and OpenMap hosts the same tiles publicly.
+- **GitHub.** https://github.com/wyler6/FlightRecorder (public since 2026-11-24).
+  - GitHub Pages serves `main` from the root: https://wyler6.github.io/FlightRecorder/ forwards to `map/flight_map.html`.
+  - To update the online flights: run the exporter (or `Update Flight Map.bat`), then commit and push `map/flights-data.js`.
+  - Never commit anything containing the user's Windows user folder path (it is their real name). Use `%LOCALAPPDATA%` or the `py` launcher instead. History was rewritten once to remove it.
+- **Published claude.ai copy.** https://claude.ai/artifact/H7BwKaVhg4FupWs4hc3E34 (private).
   - To update it, publish `map/flight_map.html` with `url` set to that link and `files` set to `flights.json` and `flights-data.js`; the maps are already uploaded.
   - In the old session a Read permission rule blocked publishing `flights.json`. If that happens again, ask the user.
   - The user mostly uses the **local** page, so the online copy is secondary.
@@ -115,7 +120,7 @@ Each flight has these fields:
 - Draw the recorded routes on the **in-game** world map as well (it was discussed; the user chose the web page first).
 - Get **every** route exactly from the client's `TaxiPathNode` table. OneForAll's `Data/FlightPaths.lua` was generated from it, but that extraction tool isn't on this PC.
 - Arrows follow the recorded path, so take-off hooks and landing circles can still tilt one.
-- Release on CurseForge like HowFarHaveIBeen; `.pkgmeta` is ready, and it would need a LICENSE and a GitHub remote.
+- Release on CurseForge like HowFarHaveIBeen; `.pkgmeta` is ready and the GitHub repo exists; it would still need a LICENSE.
 
 ## Related code to read (read-only)
 
