@@ -72,7 +72,7 @@ Each flight has these fields:
 
 ## The map page
 
-- **File format.** It's a single file with **no `<!doctype>`, `<html>`, `<head>` or `<body>` on purpose**. The claude.ai Artifact publisher wraps it, and browsers are fine with it locally. It starts with `<title>`, then `<meta name="claude:viewport-fit-sides" content="cover">`, then `<style>`.
+- **File format.** It's a single file with **no `<!doctype>`, `<html>`, `<head>` or `<body>` on purpose**. The claude.ai Artifact publisher wraps it, and browsers are fine with it locally. It starts with `<meta charset="utf-8">` (without it Chromium sometimes decodes the file:// page as Windows-1252 and "→" shows as "â†’"), then `<title>`, then `<meta name="claude:viewport-fit-sides" content="cover">`, then `<style>`.
 - **Data loading.** `flights-data.js` sets `window.FLIGHT_DATA`. That makes it work from `file://`, where `fetch` is blocked. Otherwise it fetches `flights.json`.
 - **No header, no file loading.** At the user's request the title, stats line and the "Load FlightRecorder.lua" loader were removed; the page starts with the continent, faction and zoom bar, and only shows the exported data. There's no drag-and-drop, no `parseLua` and no localStorage; at start-up it removes the old `flightmap.loaded.v1` key once. If the data can't load, the map note says so.
 - **Drawing.**
@@ -81,9 +81,18 @@ Each flight has these fields:
   - Start (circle) and end (diamond) markers, labels and direction arrows keep a constant screen size through the `scaled` list and `applyScaled()`.
   - `arrowSpots()` places about one arrow per 80 map px, with the heading smoothed over 5% of the path.
   - The hovered or pinned route gets marching dashes, which are turned off under `prefers-reduced-motion`.
+- **Zoom.** Every view change goes through `setView`. Three rules keep zoomed views sharp, all confirmed with headless screenshots:
+  - **`will-change`.** `.stage` must NOT have a permanent `will-change: transform`, or Chromium stretches a low-res raster and lines and labels turn blocky. `setView` sets it during changes and clears it 150 ms after the last one.
+  - **Line widths.** `vector-effect: non-scaling-stroke` doesn't undo a CSS transform on an ancestor HTML element. Route stroke widths and dashes are therefore `calc(Npx * var(--k))`, with `--k = 1/s` set on the svg.
+  - **Tiles.** `updateTiles` (debounced 120 ms) shows z=1 tiles when `s × devicePixelRatio` is over 1 and z=2 tiles when it's over 2, inside `#tiles` between the base img and the svg. Lower levels stay as a backdrop until the higher ones load, the DOM holds at most ~150 tiles, and missing tiles (e.g. the claude.ai copy) are ignored. Tiles carry a 2 px overlap gutter and are drawn at exact scale; stretching them causes seams.
+  - Zoom is capped at `max(fit×4, 6)`.
 - **Map art.** Built from the OpenMap addon's Forever tiles: https://github.com/openmap-world/openmap, `OpenMap/Media/Textures/Forever/MapArt/<1414|1415>_<1..12>.tga`.
   - The tiles form a 4x3 grid of 256 px (1024x768). Crop the top-left 1002x668 (the uiMap canvas), then Lanczos 2x to 2004x1336, JPEG quality 88.
   - Alignment was verified by drawing real flights on both maps: Ratchet → Freewind Post on Kalimdor, Tarren Mill → Undercity on Eastern Kingdoms.
+- **Zoom tiles (sharp art).** `tools/build_hires_maps.py` (Python + Pillow, `py -I`) builds them from OpenMap's `Media/Textures/Forever/MapZones/<i>_<j>.blp`: every zone map composited at full detail, pinned to OpenMap commit `6c2299f6…`, downloaded to `.cache/` (git-ignored).
+  - Output: `map/tiles/<kalimdor|eastern_kingdoms>/<z>/<col>_<row>.jpg`, 512 px tiles from the top-left with edge tiles cropped. z=1 is 4008x2672 (8x6 tiles) and z=2 is 8016x5344 (16x11), the same frame as the base jpgs. About 12 MB in all, committed for GitHub Pages.
+  - Mapping: tile (i, j) covers world (uiMap 947 art units) x = i*31.875 + (p-1)/16; the continent rectangles on the world map come from UiMapAssignment (embedded in the script). Verified 2026-11-25 by drawing real flights on the 8016 px images (dots on Ironforge, Thelsamar, Menethil, Ratchet, Auberdine…) and by block-matching against the base (median shift 0).
+  - The open sea and land no zone covers are still the soft base art; Orgrimmar and Undercity look smeared in OpenMap's art too.
   - The art is Blizzard's, not covered by OpenMap's MIT license; see OpenMap's `OpenMap/Media/Textures/Forever/NOTICE.md`. It has no rule against reposting, and OpenMap hosts the same tiles publicly.
 - **GitHub.** https://github.com/wyler6/FlightRecorder (public since 2026-11-24).
   - GitHub Pages serves `main` from the root: https://wyler6.github.io/FlightRecorder/ forwards to `map/flight_map.html`.
@@ -114,6 +123,7 @@ Each flight has these fields:
 ## User preferences
 
 - **Never open the user's browser.** No Chrome/browser tools, and no `start` on an .html, unless they ask. Tell subagents the same.
+  - Exception (user OK'd 2026-11-24): **headless** Edge (`C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe`, no visible window) may render the page to screenshots to check how it looks. Nothing may appear on the user's screen.
 - The user's global CLAUDE.md (architect and delegate) applies here too.
 - Keep answers short and plain. Say what was verified and what wasn't.
 - **American spelling everywhere**: replies, docs, comments, UI text, commit messages (color, gray, license, -ize).

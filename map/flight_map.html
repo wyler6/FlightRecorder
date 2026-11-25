@@ -1,3 +1,4 @@
+<meta charset="utf-8">
 <title>Flight Routes of Azeroth</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <style>
@@ -106,21 +107,23 @@ button, input { font: inherit; color: inherit; }
   touch-action: none; cursor: grab; user-select: none; -webkit-user-select: none;
 }
 .view.grabbing { cursor: grabbing; }
-.stage { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform; }
-.stage img { display: block; width: 100%; height: 100%; max-width: none; pointer-events: none; -webkit-user-drag: none; }
+.stage { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+.tiles { position: absolute; z-index: 0; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; }
+.tiles img { position: absolute; width: auto; height: auto; max-width: none; }
+.stage > img { display: block; width: 100%; height: 100%; max-width: none; pointer-events: none; -webkit-user-drag: none; }
 .stage svg { position: absolute; left: 0; top: 0; width: 100%; height: 100%; overflow: visible; }
 .mapnote {
   position: absolute; left: 10px; top: 10px; right: 10px; margin: 0; width: fit-content; max-width: calc(100% - 20px);
   padding: 8px 12px; background: var(--scrim); border: 1px solid var(--rule); border-radius: 3px;
   pointer-events: none; font-size: 14px;
 }
-.route-halo { fill: none; stroke: var(--halo); stroke-width: 5.5; stroke-opacity: 0.7; vector-effect: non-scaling-stroke; stroke-linecap: round; stroke-linejoin: round; }
-.route-line { fill: none; stroke-width: 3; vector-effect: non-scaling-stroke; stroke-linecap: round; stroke-linejoin: round; }
+.route-halo { fill: none; stroke: var(--halo); stroke-width: calc(5.5px * var(--k, 1)); stroke-opacity: 0.7; stroke-linecap: round; stroke-linejoin: round; }
+.route-line { fill: none; stroke-width: calc(3px * var(--k, 1)); stroke-linecap: round; stroke-linejoin: round; }
 .route.dim { opacity: 0.14; }
-.route.on .route-line { stroke-width: 4.5; }
-.route.on .route-halo { stroke-width: 7.5; stroke-opacity: 0.9; }
-.route.on .route-line { stroke-dasharray: 12 8; stroke-linecap: butt; animation: flow 0.9s linear infinite; }
-@keyframes flow { from { stroke-dashoffset: 0; } to { stroke-dashoffset: -20; } }
+.route.on .route-line { stroke-width: calc(4.5px * var(--k, 1)); }
+.route.on .route-halo { stroke-width: calc(7.5px * var(--k, 1)); stroke-opacity: 0.9; }
+.route.on .route-line { stroke-dasharray: calc(12px * var(--k, 1)) calc(8px * var(--k, 1)); stroke-linecap: butt; animation: flow 0.9s linear infinite; }
+@keyframes flow { from { stroke-dashoffset: 0; } to { stroke-dashoffset: calc(-20px * var(--k, 1)); } }
 .mk { stroke: var(--halo); stroke-width: 1.5; }
 .mk.dim { opacity: 0.2; }
 .lbl { font-family: var(--font-ui); font-size: 12px; font-weight: 600; fill: var(--label-ink); stroke: var(--halo); stroke-width: 3.5; paint-order: stroke; stroke-linejoin: round; }
@@ -179,6 +182,7 @@ button, input { font: inherit; color: inherit; }
       <div class="view" id="view" tabindex="0" role="application" aria-label="Map. Drag to pan, scroll or use plus and minus to zoom.">
         <div class="stage" id="stage" hidden>
           <img id="mapImg" alt="" draggable="false">
+          <div class="tiles" id="tiles"></div>
           <svg id="overlay" aria-hidden="true"></svg>
         </div>
         <p class="mapnote" id="mapNote" hidden></p>
@@ -267,8 +271,8 @@ function arrowSpots(pts, nw, nh) {
   const $ = (id) => document.getElementById(id);
   const SVGNS = 'http://www.w3.org/2000/svg';
   const CONT = {
-    1414: { name: 'Kalimdor', img: 'maps/kalimdor.jpg', btn: 'contKalimdor', count: 'countKalimdor' },
-    1415: { name: 'Eastern Kingdoms', img: 'maps/eastern_kingdoms.jpg', btn: 'contEK', count: 'countEK' }
+    1414: { name: 'Kalimdor', img: 'maps/kalimdor.jpg', tiles: 'kalimdor', btn: 'contKalimdor', count: 'countKalimdor' },
+    1415: { name: 'Eastern Kingdoms', img: 'maps/eastern_kingdoms.jpg', tiles: 'eastern_kingdoms', btn: 'contEK', count: 'countEK' }
   };
   // one fixed color per faction
   const FACTIONS = ['Alliance', 'Horde', 'Other'];
@@ -276,7 +280,7 @@ function arrowSpots(pts, nw, nh) {
   const groupOf = (f) => (f.faction === 'Alliance' || f.faction === 'Horde' ? f.faction : 'Other');
   const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 
-  const view = $('view'), stage = $('stage'), img = $('mapImg'), svg = $('overlay');
+  const view = $('view'), stage = $('stage'), img = $('mapImg'), tilesEl = $('tiles'), svg = $('overlay');
   const state = {
     flights: [], loadError: '',
     cont: 1414, hidden: new Set(), pinned: null, hover: null,
@@ -284,7 +288,7 @@ function arrowSpots(pts, nw, nh) {
     nw: 1002, nh: 668, vw: 0, vh: 0, tx: 0, ty: 0, s: 1, minS: 0.1, maxS: 4, atFit: true
   };
   let routeEls = new Map(), markerEls = [], labelEls = [], gRoutes = null, scaled = [];
-  let anim = 0;
+  let anim = 0, idleTimer = 0, tileTimer = 0;
 
   // ---------- helpers ----------
   const short = (name) => String(name).split(',')[0].trim();
@@ -489,6 +493,7 @@ function arrowSpots(pts, nw, nh) {
     renderCounts();
     state.imgError = false;
     stage.hidden = true;
+    clearTiles();
     const wanted = CONT[c].img;
     img.onload = () => { if (state.cont === c) onImage(true); };
     img.onerror = () => { if (state.cont === c) onImage(false); };
@@ -520,7 +525,7 @@ function arrowSpots(pts, nw, nh) {
     state.vw = r.width; state.vh = r.height;
     const fit = Math.min(state.vw / state.nw, state.vh / state.nh) || 0.1;
     state.minS = fit;
-    state.maxS = fit * 14;
+    state.maxS = Math.max(fit * 4, 6);
   }
   function clampView(tx, ty, s) {
     const w = state.nw * s, h = state.nh * s;
@@ -533,8 +538,81 @@ function arrowSpots(pts, nw, nh) {
     const sChanged = s !== state.s;
     state.tx = c.tx; state.ty = c.ty; state.s = s;
     stage.style.transform = 'translate(' + c.tx + 'px,' + c.ty + 'px) scale(' + s + ')';
-    if (sChanged) applyScaled();
+    if (sChanged) { applyScaled(); svg.style.setProperty('--k', String(1 / s)); }
+    stage.style.willChange = 'transform';
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => { stage.style.willChange = ''; }, 150);
+    clearTimeout(tileTimer);
+    tileTimer = setTimeout(updateTiles, 120);
     state.atFit = Math.abs(s - state.minS) < 1e-6 && Math.abs(c.tx - (state.vw - state.nw * s) / 2) < 1 && Math.abs(c.ty - (state.vh - state.nh * s) / 2) < 1;
+  }
+  // ---------- tile layer ----------
+  const TILE = 512, GUTTER = 2, MAX_TILES = 150; // GUTTER: extra px baked into each tile's right/bottom edge
+  let tileMap = new Map(); // 'z/col_row' -> {el, z, col, row, loaded, failed}
+  let lastWant = new Set(), lastZ = 0;
+  function clearTiles() {
+    tilesEl.textContent = '';
+    tileMap = new Map();
+    lastWant = new Set(); lastZ = 0;
+    clearTimeout(tileTimer);
+  }
+  function updateTiles() {
+    if (stage.hidden || state.imgError) return;
+    const eff = state.s * (window.devicePixelRatio || 1);
+    const z = eff <= 1 ? 0 : eff <= 2 ? 1 : 2;
+    const want = new Set();
+    if (z > 0) {
+      const f = Math.pow(2, z), tn = TILE / f; // tile size in natural units
+      const m = tn / 2;
+      const x0 = -state.tx / state.s - m, y0 = -state.ty / state.s - m;
+      const x1 = (state.vw - state.tx) / state.s + m, y1 = (state.vh - state.ty) / state.s + m;
+      const cols = Math.ceil(state.nw * f / TILE), rows = Math.ceil(state.nh * f / TILE);
+      const c0 = Math.max(0, Math.floor(x0 / tn)), c1 = Math.min(cols - 1, Math.floor(x1 / tn));
+      const r0 = Math.max(0, Math.floor(y0 / tn)), r1 = Math.min(rows - 1, Math.floor(y1 / tn));
+      for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) {
+        const key = z + '/' + c + '_' + r;
+        want.add(key);
+        if (tileMap.has(key)) continue;
+        const el = document.createElement('img');
+        el.alt = ''; el.draggable = false; el.decoding = 'async';
+        const t = { el: el, z: z, col: c, row: r, loaded: false, failed: false };
+        el.onload = () => { t.loaded = true; el.style.visibility = 'visible'; pruneTiles(); };
+        el.onerror = () => { t.failed = true; el.remove(); pruneTiles(); }; // stays in tileMap so it is not retried
+        el.style.visibility = 'hidden';
+        el.style.left = (c * tn) + 'px';
+        el.style.top = (r * tn) + 'px';
+        el.style.zIndex = String(z);
+        // exact scale, no stretch: the baked gutter overlaps the next tile
+        el.style.width = Math.min(TILE + GUTTER, state.nw * f - c * TILE) / f + 'px';
+        el.style.height = Math.min(TILE + GUTTER, state.nh * f - r * TILE) / f + 'px';
+        el.src = 'tiles/' + CONT[state.cont].tiles + '/' + z + '/' + c + '_' + r + '.jpg';
+        tilesEl.append(el);
+        tileMap.set(key, t);
+      }
+    }
+    lastWant = want; lastZ = z;
+    pruneTiles();
+  }
+  // Drop tiles that are neither wanted nor a backdrop for a wanted tile of another level still loading.
+  function pruneTiles() {
+    const covers = (a, b) => { // do the two tiles overlap?
+      const fa = Math.pow(2, a.z), fb = Math.pow(2, b.z);
+      return a.col * TILE / fa < (b.col + 1) * TILE / fb && (a.col + 1) * TILE / fa > b.col * TILE / fb &&
+             a.row * TILE / fa < (b.row + 1) * TILE / fb && (a.row + 1) * TILE / fa > b.row * TILE / fb;
+    };
+    const pending = [];
+    for (const [key, t] of tileMap) if (lastWant.has(key) && !t.loaded && !t.failed) pending.push(t);
+    for (const [key, t] of tileMap) {
+      if (lastWant.has(key)) continue;
+      const keep = t.loaded && t.z !== lastZ && pending.some((p) => covers(t, p));
+      if (!keep) { t.el.remove(); tileMap.delete(key); }
+    }
+    if (tileMap.size > MAX_TILES) {
+      for (const [key, t] of tileMap) {
+        if (tileMap.size <= MAX_TILES) break;
+        if (!lastWant.has(key)) { t.el.remove(); tileMap.delete(key); }
+      }
+    }
   }
   function animateTo(tx, ty, s, animate) {
     cancelAnimationFrame(anim);
