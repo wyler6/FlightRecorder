@@ -2,6 +2,7 @@
 
 Records the exact path of every flight path (taxi) you take as a list of position samples. The addon itself has no window; the routes are drawn by the flight map page in `map/` (see **Flight map** below).
 Recordings that never reach taxi speed within 10 s are discarded (not saved).
+Routes you already have are skipped: a taxi route always follows the same path, so a repeat of a saved, complete route (same flight masters, same direction) is not recorded again. Use `/frec repeats` to turn this off. On load the addon also removes repeat flights already saved, keeping the best copy of each route.
 
 **Install note:** a new addon needs a full game restart (not /reload) the first time.
 
@@ -15,10 +16,11 @@ Recordings that never reach taxi speed within 10 s are discarded (not saved).
 - `clear confirm` - delete all flights
 - `on` / `off` - enable or disable recording
 - `quiet` - toggle chat messages
+- `repeats` - toggle skipping routes already saved (default on)
 - `interval <seconds>` - sample interval, 0.2 to 5 (default 0.5)
 
 ## Data format
-`FlightRecorderDB = { version = 1, settings = { enabled, interval, quiet }, flights = { ... } }`
+`FlightRecorderDB = { version = 1, settings = { enabled, interval, quiet, skipRepeats }, flights = { ... } }`
 
 Each flight:
 - `char`, `faction`, `class` - player name (no realm), faction group, class token

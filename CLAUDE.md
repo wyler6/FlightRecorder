@@ -32,7 +32,7 @@ The repo root is the addon folder, the same pattern as the user's `E:\Projects\H
 
 ## Data format (`FlightRecorderDB`)
 
-`{ version = 1, settings = { enabled, interval = 0.5, quiet }, flights = { ... } }`
+`{ version = 1, settings = { enabled, interval = 0.5, quiet, skipRepeats = true }, flights = { ... } }` (plus a short-lived `skipping = { savedAt }` while a skipped flight spans a reload)
 
 Each flight has these fields:
 - `char`, `faction`, `class`
@@ -67,7 +67,13 @@ Each flight has these fields:
   - `PLAYER_ENTERING_WORLD` (immediately and again 2 s later) resumes it if `UnitOnTaxi` and `savedAt` was at most 120 s ago.
   - A resumed recording that never reaches speed is put back exactly as it was saved.
 - **Safety.** There is a 30-minute timeout. All handlers run through one pcall wrapper that prints the first error once.
-- **Slash commands:** `/frec` and `/flightrec`, with `status`, `list [n]`, `delete <i>`, `clear confirm`, `on`/`off`, `quiet`, `interval <s>`.
+- **Repeats (1.1.0).** A taxi route always flies the same path, so repeats are skipped.
+  - **Route key:** `routeKey()` is the node-ID chain: `fromNode>toNode`, or `hops[1][3]>hops[i][4]…` for multi-stop routes. Direction matters, and a nil ID means "never skip".
+  - **At takeoff:** with `settings.skipRepeats` on (the default), `tryStart` doesn't record when a complete flight with the same key exists, and says so in chat.
+  - **After a flight:** `finish()` runs `keepBest()`, which keeps one flight per key: complete first, then most points, then newest. A complete flight therefore replaces a partial one. `onLogout`/`abortRecording` never prune, so the resume path stays intact.
+  - **Reload during a skipped flight:** it persists `db.skipping = { savedAt }`, so `onEnteringWorld` doesn't start a "joined mid-flight" recording of it.
+  - **On load:** `pruneRepeats()` runs in `ADDON_LOADED` and applies the same keep-best rule to the whole list (survivors keep their order, nil keys are untouched), so repeats saved before 1.1.0 disappear. It never touches a resumable `logout` entry (saved at most 120 s ago), which must stay last for the resume path.
+- **Slash commands:** `/frec` and `/flightrec`, with `status`, `list [n]`, `delete <i>`, `clear confirm`, `on`/`off`, `quiet`, `repeats`, `interval <s>`.
 - **First real test, 2026-11-24:** a Horde character, Ratchet → Crossroads → Freewind Post, 4:13, 7,616 yd, 505 points, no gap over 0.6 s, correct hops and zones.
 
 ## The map page
@@ -113,7 +119,10 @@ Each flight has these fields:
 
 ## Checking work without the game or a browser
 
-- **Lua.** No Lua interpreter is installed. To syntax-check, make a venv (`.venv/`, git-ignored), install `luaparser`, and run `luaparser.ast.parse` on the file. Logic can only be tested in game, so the user tests on their next flight.
+- **Lua.** `.venv/` (git-ignored) has `luaparser` and `lupa`.
+  - **Syntax:** run `luaparser.ast.parse` on the file.
+  - **Logic:** `.venv/Scripts/python tools/test_addon.py` loads the real `FlightRecorder.lua` into a mocked WoW API on real Lua 5.1 (`lupa.lua51`) and simulates flights, skips, reloads and resumes. Add a test for any logic change. Disabling the skip check makes 4 tests fail, so the tests do catch regressions.
+  - The mock is a reading of the client API, so in-game behavior is still confirmed on the user's next flight.
 - **JavaScript.** Deno is at `%LOCALAPPDATA%\Microsoft\WinGet\Packages\DenoLand.Deno_Microsoft.Winget.Source_8wekyb3d8bbwe\deno.exe`.
   - Extract the main inline `<script>` and run `deno check --no-config`.
   - For logic, eval `flights-data.js` with `globalThis.window = globalThis` and call the pure functions (`normFlight`, `arrowSpots`).

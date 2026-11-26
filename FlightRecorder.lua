@@ -1,6 +1,6 @@
 -- FlightRecorder: records the exact path of every taxi flight (recording only, no UI).
 local PREFIX = "|cff33ccffFlightRecorder|r:"
-local DEFAULTS = { enabled = true, interval = 0.5, quiet = false }
+local DEFAULTS = { enabled = true, interval = 0.5, quiet = false, skipRepeats = true }
 local SPEED_LIMIT = 20      -- yd/s; taxis fly about 30, running/riding is below 20
 local SLOW_SECS = 3         -- seconds below the limit (after being fast) that count as landed
 local MAX_SECS = 1800       -- safety timeout
@@ -12,6 +12,7 @@ local pick          -- the last picked flight (from TakeTaxiNode)
 local rec           -- the flight being recorded
 local ticker
 local errored = false
+local skipping = false  -- a repeat flight is being skipped (not recorded)
 
 local function safe(fn)
   return function(...)
@@ -63,6 +64,76 @@ local function initDB()
   db = d
 end
 
+-- Route key from node IDs (nil = unknown, never skipped). Works for picks and saved flights.
+local function routeKey(o)
+  if not o then return nil end
+  local ids = {}
+  if o.hops and #o.hops > 0 then
+    ids[1] = o.hops[1][3]
+    for i = 1, #o.hops do ids[i + 1] = o.hops[i][4] end
+    for i = 1, #o.hops + 1 do
+      if not ids[i] then return nil end
+    end
+  else
+    if not (o.fromNode and o.toNode) then return nil end
+    ids[1], ids[2] = o.fromNode, o.toNode
+  end
+  return table.concat(ids, ">")
+end
+
+local function haveComplete(key)
+  for _, f in ipairs(db.flights) do
+    if f.complete == true and routeKey(f) == key then return true end
+  end
+  return false
+end
+
+-- is a better than b? complete first, then most points, then newest
+local function better(a, b)
+  local ac, bc = a.complete == true, b.complete == true
+  if ac ~= bc then return ac end
+  local ap, bp = a.points and #a.points or 0, b.points and #b.points or 0
+  if ap ~= bp then return ap > bp end
+  return (a.started or 0) >= (b.started or 0)
+end
+
+-- keep only the best flight for f's route; returns removed count, whether f survived
+local function keepBest(f)
+  local key = routeKey(f)
+  if not key then return 0, true end
+  local best = f
+  for _, g in ipairs(db.flights) do
+    if g ~= f and routeKey(g) == key and better(g, best) then best = g end
+  end
+  local kept, removed = {}, 0
+  for _, g in ipairs(db.flights) do
+    if g == best or routeKey(g) ~= key then kept[#kept + 1] = g else removed = removed + 1 end
+  end
+  db.flights = kept
+  return removed, best == f
+end
+
+-- on load: keep only the best flight per route across all saved flights; returns removed count
+-- (a fresh logout entry is the flight onEnteringWorld resumes, so it is left out entirely)
+local function pruneRepeats()
+  local flights = db.flights
+  local keys, best = {}, {}
+  for i, f in ipairs(flights) do
+    local fresh = f.note == "logout" and type(f.savedAt) == "number"
+      and math.abs(time() - f.savedAt) <= 120
+    local key = (not fresh) and routeKey(f) or nil
+    keys[i] = key
+    if key and (not best[key] or better(f, best[key])) then best[key] = f end
+  end
+  local kept, removed = {}, 0
+  for i, f in ipairs(flights) do
+    local key = keys[i]
+    if not key or best[key] == f then kept[#kept + 1] = f else removed = removed + 1 end
+  end
+  if removed > 0 then db.flights = kept end
+  return removed
+end
+
 ---------------------------------------------------------------------------
 -- Map helpers
 ---------------------------------------------------------------------------
@@ -103,6 +174,7 @@ end
 ---------------------------------------------------------------------------
 local function onTakeTaxiNode(slot)
   if not (db and db.settings.enabled) then return end
+  skipping = false
   local p = { time = GetTime() }
   p.taxiMap = GetTaxiMapID and GetTaxiMapID() or nil
 
@@ -221,8 +293,13 @@ local function finish(note, complete)
   f.savedAt = nil
   rec = nil
   db.flights[#db.flights + 1] = f
-  say(string.format("saved %s -> %s: %s, %d yd, %d points",
-    f.from or "?", f.to or "?", mmss(f.duration), f.distance, #f.points))
+  local removed, survived = keepBest(f)
+  local extra = ""
+  if removed > 0 then
+    extra = survived and " (replaced an older copy)" or " (kept the better existing copy)"
+  end
+  say(string.format("saved %s -> %s: %s, %d yd, %d points%s",
+    f.from or "?", f.to or "?", mmss(f.duration), f.distance, #f.points, extra))
 end
 
 local function landNote()
@@ -307,6 +384,7 @@ local function newFlight()
 end
 
 local function beginRecording(f, offset, flags)
+  skipping = false
   rec = { flight = f, start = GetTime(), offset = offset or 0, fast = false }
   if flags then
     for k, v in pairs(flags) do rec[k] = v end
@@ -338,12 +416,29 @@ local function tryStart()
   local f = newFlight()
   f.from, f.to, f.fromNode, f.toNode = p.from, p.to, p.fromNode, p.toNode
   f.hops, f.taxiMap = p.hops, p.taxiMap
+  if db.settings.skipRepeats then
+    local key = routeKey(f)
+    if key and haveComplete(key) then
+      skipping = true
+      say("already have " .. (p.from or "?") .. " -> " .. (p.to or "?")
+        .. ", not recording (/frec repeats to record repeats)")
+      return
+    end
+  end
   beginRecording(f, 0)
 end
 
 local function onEnteringWorld()
+  local sk = db and db.skipping
+  if sk then
+    db.skipping = nil
+    if onTaxi() and type(sk.savedAt) == "number" and math.abs(time() - sk.savedAt) <= 120 then
+      skipping = true
+    end
+  end
   if rec or not (db and db.settings.enabled) then return end
-  if not onTaxi() then return end
+  if not onTaxi() then skipping = false; return end
+  if skipping then return end
   local flights = db.flights
   local last = flights[#flights]
   if last and last.note == "logout" and type(last.savedAt) == "number"
@@ -361,6 +456,9 @@ local function onEnteringWorld()
 end
 
 local function onLogout()
+  if db then
+    db.skipping = (skipping and not rec and onTaxi()) and { savedAt = time() } or nil
+  end
   if not rec then return end
   local r = rec
   stopTicker()
@@ -383,6 +481,11 @@ local handlers = {}
 handlers.ADDON_LOADED = function(name)
   if name ~= "FlightRecorder" then return end
   initDB()
+  local n = pruneRepeats()
+  if n > 0 then
+    say(string.format("removed %d repeat flight%s (kept the best copy of each route)",
+      n, n == 1 and "" or "s"))
+  end
 end
 
 handlers.PLAYER_CONTROL_LOST = function()
@@ -444,10 +547,11 @@ local function slash(msg)
     print("  clear confirm - delete all flights")
     print("  on / off - enable or disable recording")
     print("  quiet - toggle chat output")
+    print("  repeats - toggle skipping routes already saved")
     print("  interval <seconds> - sample interval (0.2-5)")
   elseif cmd == "status" then
-    say_always(string.format("enabled=%s quiet=%s interval=%ss flights saved=%d",
-      tostring(s.enabled), tostring(s.quiet), tostring(s.interval), #db.flights))
+    say_always(string.format("enabled=%s quiet=%s skipRepeats=%s interval=%ss flights saved=%d",
+      tostring(s.enabled), tostring(s.quiet), tostring(s.skipRepeats), tostring(s.interval), #db.flights))
     if rec then
       say_always(string.format("recording now: %s -> %s, %d points so far",
         rec.flight.from or "?", rec.flight.to or "?", #rec.flight.points))
@@ -484,6 +588,10 @@ local function slash(msg)
   elseif cmd == "quiet" then
     s.quiet = not s.quiet
     say_always("quiet " .. (s.quiet and "on" or "off"))
+  elseif cmd == "repeats" then
+    s.skipRepeats = not s.skipRepeats
+    say_always("skip repeats " .. (s.skipRepeats and "on (routes already saved are not recorded again)"
+      or "off (repeat flights are recorded; only the best copy of each route is kept)"))
   elseif cmd == "interval" then
     local v = tonumber(rest)
     if not v then say_always("usage: /frec interval <seconds> (0.2-5)"); return end
