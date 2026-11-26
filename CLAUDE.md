@@ -69,10 +69,11 @@ Each flight has these fields:
 - **Safety.** There is a 30-minute timeout. All handlers run through one pcall wrapper that prints the first error once.
 - **Repeats (1.1.0).** A taxi route always flies the same path, so repeats are skipped.
   - **Route key:** `routeKey()` is the node-ID chain: `fromNode>toNode`, or `hops[1][3]>hops[i][4]…` for multi-stop routes. Direction matters, and a nil ID means "never skip".
-  - **At takeoff:** with `settings.skipRepeats` on (the default), `tryStart` doesn't record when a complete flight with the same key exists, and says so in chat.
+  - **At takeoff:** with `settings.skipRepeats` on (the default), `tryStart` silently doesn't record when a complete flight with the same key exists.
   - **After a flight:** `finish()` runs `keepBest()`, which keeps one flight per key: complete first, then most points, then newest. A complete flight therefore replaces a partial one. `onLogout`/`abortRecording` never prune, so the resume path stays intact.
   - **Reload during a skipped flight:** it persists `db.skipping = { savedAt }`, so `onEnteringWorld` doesn't start a "joined mid-flight" recording of it.
   - **On load:** `pruneRepeats()` runs in `ADDON_LOADED` and applies the same keep-best rule to the whole list (survivors keep their order, nil keys are untouched), so repeats saved before 1.1.0 disappear. It never touches a resumable `logout` entry (saved at most 120 s ago), which must stay last for the resume path.
+- **Chat (1.1.1).** The user asked for chat output only for new flights: "recording X -> Y" at takeoff (not on a resume) and "saved ..." at landing. Skipped repeats, discarded phantom recordings, resumes and the load-time cleanup are silent. Slash-command replies (`say_always`) are unaffected.
 - **Slash commands:** `/frec` and `/flightrec`, with `status`, `list [n]`, `delete <i>`, `clear confirm`, `on`/`off`, `quiet`, `repeats`, `interval <s>`.
 - **First real test, 2026-11-24:** a Horde character, Ratchet → Crossroads → Freewind Post, 4:13, 7,616 yd, 505 points, no gap over 0.6 s, correct hops and zones.
 

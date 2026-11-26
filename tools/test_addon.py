@@ -224,15 +224,13 @@ def a_first_flight_recorded():
 
 @test
 def b_repeat_skipped():
-    """(b) second A->B is skipped with the message, nothing new saved"""
+    """(b) second A->B is skipped silently, nothing new saved"""
     db = G.boot()
     G.fly(1, 2, None, SECS)
     G.clearLog()
     G.fly(1, 2, None, SECS)
     check(len(db.flights) == 1, f"expected 1 flight, got {keys(db)}")
-    check(G.logHas("already have A -> B, not recording (/frec repeats to record repeats)"),
-          "skip message missing")
-    check(not G.logHas("recording A -> B") and not G.logHas("saved"), "it recorded anyway")
+    check(G.logText() == "", "a skipped repeat should print nothing")
 
 
 @test
@@ -257,7 +255,7 @@ def d_multistop_key_differs():
     # the multi-stop route is now known too: repeating it is skipped
     G.clearLog()
     G.fly(1, 3, 2, SECS)
-    check(len(db.flights) == 2 and G.logHas("already have"), "multi-stop repeat not skipped")
+    check(len(db.flights) == 2 and G.logText() == "", "multi-stop repeat not skipped")
     # and the chain key is A>B>C (10>20>30), checked through a different chain A>D>C
     G.fly(1, 3, 4, SECS)
     check(len(db.flights) == 3, f"A>D>C should differ from A>B>C, got {len(db.flights)}")
@@ -306,7 +304,7 @@ def f_incomplete_copy_replaced():
     """)
     G.fly(1, 4, None, SECS)
     check(G.logHas("recording A -> D"), "incomplete copy blocked recording")
-    check(not G.logHas("already have"), "should not have skipped")
+    check(len(db.flights) == 1, "should not have skipped")
     check(keys(db) == ["10>40:C:landed"], f"got {keys(db)}")
 
 
@@ -320,7 +318,7 @@ def g_nil_node_ids_never_skipped():
     lua.execute("S.noid[2] = nil")
     check(len(db.flights) == 2, f"expected both recorded, got {keys(db)}")
     check(db.flights[1].toNode is None, "toNode should be nil")
-    check(not G.logHas("already have"), "skipped a flight with unknown node ids")
+    check(G.logHas("recording A -> B"), "skipped a flight with unknown node ids")
 
 
 @test
@@ -328,8 +326,10 @@ def h_reload_during_skipped_flight():
     """(h) reload during a skipped flight does not start a joined recording"""
     db = G.boot()
     G.fly(1, 2, None, SECS)
+    G.clearLog()
     G.fly(1, 2, None, 10, True)  # skipped, still on the taxi
-    check(G.logHas("already have"), "setup: flight was not skipped")
+    check(db.skipping is None and len(db.flights) == 1 and G.logText() == "",
+          "setup: flight was not skipped")
     G.fire("PLAYER_LOGOUT")
     check(db.skipping is not None and db.skipping.savedAt is not None, "db.skipping not persisted")
     check(len(db.flights) == 1, f"logout added a flight: {keys(db)}")
@@ -408,10 +408,11 @@ def i_logout_resume_still_works():
     db = G.boot(db)
     G.fire("PLAYER_ENTERING_WORLD")
     G.advance(1)
-    check(G.logHas("recording A -> B"), "flight was not resumed")
     check(len(db.flights) == 0, "logout entry should be taken back while resuming")
+    check(not G.logHas("recording"), "resume should not announce a recording")
     G.advance(20)
     G.land()
+    check(G.logHas("saved A -> B"), "resumed flight did not print saved")
     check(keys(db) == ["10>20:C:resumed"], f"got {keys(db)}")
 
 
@@ -479,8 +480,7 @@ def k_prune_duplicates_on_load():
     )
     check(tags(db) == ["nokey1", "unique", "r2-more", "nokey2", "r1-newest"],
           f"got {tags(db)}")
-    check(G.logHas("removed 4 repeat flights (kept the best copy of each route)"),
-          "chat message missing or wrong count")
+    check(G.logText() == "", "load-time cleanup should be silent")
 
 
 @test
@@ -493,8 +493,7 @@ def l_prune_hops_keyed_and_directional():
         fl(10, 30, True, 3, 100, tag="direct"),            # different key from the chain
     )
     check(tags(db) == ["cba", "abc-new", "direct"], f"got {tags(db)}")
-    check(G.logHas("removed 1 repeat flight (kept"), "singular message missing")
-    check(not G.logHas("1 repeat flights"), "plural used for 1")
+    check(not G.logHas("removed"), "load-time cleanup should be silent")
 
 
 @test
@@ -517,7 +516,7 @@ def n_prune_keeps_resumable_logout_entry():
     lua.execute("S.taxi, S.speed = true, 30")
     G.fire("PLAYER_ENTERING_WORLD")
     G.advance(1)
-    check(G.logHas("recording"), "resume did not start")
+    check(not G.logHas("recording"), "resume should not announce a recording")
     check(tags(db) == ["complete"], f"logout entry not taken back for resume: {tags(db)}")
     G.advance(20)
     G.land()
@@ -532,7 +531,34 @@ def o_prune_stale_logout_entry_removed():
         fl(10, 20, False, 3, 400, note="logout", saved=int(G.S.now) - 600, tag="stale"),
     )
     check(tags(db) == ["complete"], f"got {tags(db)}")
-    check(G.logHas("removed 1 repeat flight"), "message missing")
+    check(not G.logHas("removed"), "load-time cleanup should be silent")
+
+@test
+def p_new_flight_messages():
+    """(p) a new flight prints exactly one recording line at takeoff, then saved at landing"""
+    G.boot()
+    G.fly(1, 2, None, SECS, True)
+    check(len(G.S.log) == 1 and G.S.log[1].endswith("recording A -> B"),
+          "expected exactly one recording line")
+    G.land()
+    check(len(G.S.log) == 2 and "saved A -> B" in G.S.log[2], "expected a saved line at landing")
+
+
+@test
+def q_phantom_recording_silent():
+    """(q) on a taxi but never at taxi speed for 10 s: discarded with no chat output"""
+    db = G.boot()
+    G.S.cur = 1
+    lua.execute("S.routes[2] = { 1, 2 }; S.taxi, S.speed = false, 0")
+    G.S.env.TakeTaxiNode(2)
+    G.fire("PLAYER_CONTROL_LOST")
+    lua.execute("S.taxi, S.speed = true, 0")
+    G.advance(1)
+    check(len(G.S.log) == 1 and "recording" in G.S.log[1], "setup: recording did not start")
+    G.advance(15)
+    check(len(db.flights) == 0, f"phantom was saved: {keys(db)}")
+    check(len(G.S.log) == 1, "discard should print nothing more")
+
 
 print()
 print(f"Lua runtime: {lua.eval('_VERSION')} via {LUA_NAME}")

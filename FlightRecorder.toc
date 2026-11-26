@@ -1,6 +1,6 @@
 ## Interface: 16001
 ## Title: Flight Recorder
 ## Notes: Records the exact path of every flight path you take.
-## Version: 1.1.0
+## Version: 1.1.1
 ## SavedVariables: FlightRecorderDB
 FlightRecorder.lua

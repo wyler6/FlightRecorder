@@ -322,7 +322,6 @@ local function abortRecording()
     f.savedAt = r.savedAt
     db.flights[#db.flights + 1] = f
   end
-  say("no flight detected, recording discarded")
 end
 
 local function tick()
@@ -404,7 +403,10 @@ local function beginRecording(f, offset, flags)
   if C_Timer and C_Timer.NewTicker then
     ticker = C_Timer.NewTicker(interval, safe(tick))
   end
-  say("recording " .. (f.from or "?") .. " -> " .. (f.to or "?"))
+  -- a resumed flight was already announced
+  if not rec.resumed then
+    say("recording " .. (f.from or "?") .. " -> " .. (f.to or "?"))
+  end
 end
 
 local function tryStart()
@@ -420,8 +422,6 @@ local function tryStart()
     local key = routeKey(f)
     if key and haveComplete(key) then
       skipping = true
-      say("already have " .. (p.from or "?") .. " -> " .. (p.to or "?")
-        .. ", not recording (/frec repeats to record repeats)")
       return
     end
   end
@@ -481,11 +481,7 @@ local handlers = {}
 handlers.ADDON_LOADED = function(name)
   if name ~= "FlightRecorder" then return end
   initDB()
-  local n = pruneRepeats()
-  if n > 0 then
-    say(string.format("removed %d repeat flight%s (kept the best copy of each route)",
-      n, n == 1 and "" or "s"))
-  end
+  pruneRepeats()
 end
 
 handlers.PLAYER_CONTROL_LOST = function()

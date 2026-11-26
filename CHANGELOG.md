@@ -1,3 +1,8 @@
+## 1.1.1 - 2026-11-26
+
+- Chat only shows messages for new flights: "recording" when a new flight starts and "saved" when it lands
+- Skipped repeats, discarded phantom recordings, flights resumed after a /reload and the cleanup on load are now silent
+
 ## 1.1.0 - 2026-11-25
 
 - Skips routes you already have: a repeat of a saved, complete route (same flight masters, same direction) is not recorded
